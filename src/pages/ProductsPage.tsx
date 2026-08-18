@@ -57,7 +57,7 @@ export default function ProductsPage() {
       .then((data) => setProducts(Array.isArray(data) ? data : []))
       .catch((err) => {
         console.error("Failed to load products:", err);
-        setError("Unable to load products. Please make sure the server is running.");
+        setError("Unable to load products. The server may be waking up — please wait a moment and retry.");
         setProducts([]);
       })
       .finally(() => setLoading(false));
