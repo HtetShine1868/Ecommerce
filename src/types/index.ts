@@ -1,4 +1,4 @@
-﻿export interface User {
+export interface User {
   id: string;
   email: string;
   name: string;
@@ -18,6 +18,8 @@ export interface Product {
   category?: string;
   createdAt: string;
   updatedAt: string;
+  // computed client-side for analytics / popular sort
+  salesCount?: number;
 }
 
 export interface CartItem {
@@ -59,6 +61,8 @@ export interface Order {
   customerEmail: string;
   customerPhone?: string;
   deliveryAddress: string;
+  deliveryTown?: string;
+  deliveryFee?: number;
   items: OrderItem[];
   subtotal: number;
   cargoTotal: number;
@@ -71,6 +75,8 @@ export interface OrderRequest {
   customerName: string;
   customerPhone?: string;
   deliveryAddress: string;
+  deliveryTown?: string;
+  deliveryFee?: number;
 }
 
 export interface AuthTokens {

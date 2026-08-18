@@ -1,9 +1,14 @@
-﻿import { Link } from "react-router-dom";
+import { Link } from "react-router-dom";
 import type { Product } from "../../types";
 import { useCart } from "../../context/CartContext";
 import { formatMMK } from "../../utils/format";
 
-export default function ProductCard({ product }: { product: Product }) {
+interface ProductCardProps {
+  product: Product;
+  isPopular?: boolean;
+}
+
+export default function ProductCard({ product, isPopular }: ProductCardProps) {
   const { addItem } = useCart();
 
   const handleAdd = (e: React.MouseEvent) => {
@@ -26,6 +31,22 @@ export default function ProductCard({ product }: { product: Product }) {
           alt={product.name}
           className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
         />
+
+        {/* Overlay badges — top-left */}
+        <div className="absolute top-2 left-2 flex flex-col gap-1">
+          {isPopular && (
+            <span className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-2.5 py-0.5 text-xs font-bold text-white shadow-md flex items-center gap-1">
+              🔥 Popular
+            </span>
+          )}
+          {product.category && (
+            <span className="rounded-full bg-primary-600/80 backdrop-blur-sm px-2.5 py-0.5 text-xs font-semibold text-white">
+              {product.category}
+            </span>
+          )}
+        </div>
+
+        {/* Stock overlays — top-right / full overlay */}
         {isOutOfStock && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/50">
             <span className="rounded-full bg-red-500 px-4 py-1.5 text-sm font-bold text-white">

@@ -4,9 +4,17 @@ import { useAuth } from "../context/AuthContext";
 import { productApi } from "../api/products";
 import { orderApi } from "../api/orders";
 import { formatMMK, formatDate, getOrderStatusColor, ORDER_STATUSES } from "../utils/format";
-import type { Product, Order } from "../types";
+import {
+  getCategories,
+  saveCategories,
+  getDeliveryZones,
+  saveDeliveryZones,
+  generateId,
+} from "../utils/localStorage";
+import type { Category, DeliveryZone } from "../utils/localStorage";
+import type { Product, Order, OrderItem } from "../types";
 
-type Tab = "dashboard" | "products" | "orders" | "order-detail";
+type Tab = "dashboard" | "products" | "orders" | "order-detail" | "analytics" | "settings";
 
 interface ProductFormState {
   name: string;
@@ -14,6 +22,7 @@ interface ProductFormState {
   price: string;
   stock: string;
   cargoPrice: string;
+  category: string;
 }
 
 const emptyForm: ProductFormState = {
@@ -22,9 +31,72 @@ const emptyForm: ProductFormState = {
   price: "",
   stock: "",
   cargoPrice: "",
+  category: "",
 };
 
-// ─── Small reusable UI pieces ────────────────────────────────────────────────
+// ─── Analytics helpers ────────────────────────────────────────────────────────
+
+interface BestSellerRow {
+  productId: number | null;
+  productName: string;
+  productImageUrl?: string;
+  category?: string;
+  unitsSold: number;
+  revenue: number;
+}
+
+function computeBestSellers(
+  orders: Order[],
+  products: Product[],
+  filterCategory: string,
+  filterPeriod: string
+): BestSellerRow[] {
+  const now = new Date();
+  const filteredOrders = orders.filter((o) => {
+    if (filterPeriod === "today") {
+      const d = new Date(o.orderDate);
+      return d.toDateString() === now.toDateString();
+    }
+    if (filterPeriod === "week") {
+      const d = new Date(o.orderDate);
+      const diff = (now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24);
+      return diff <= 7;
+    }
+    if (filterPeriod === "month") {
+      const d = new Date(o.orderDate);
+      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    }
+    return true; // all
+  });
+
+  const map: Map<string, BestSellerRow> = new Map();
+  filteredOrders.forEach((order) => {
+    order.items.forEach((item: OrderItem) => {
+      const key = item.productId !== null ? String(item.productId) : item.productName;
+      const product = products.find((p) => p.id === item.productId);
+      const category = product?.category ?? "";
+      if (filterCategory && category !== filterCategory) return;
+      if (map.has(key)) {
+        const row = map.get(key)!;
+        row.unitsSold += item.quantity;
+        row.revenue += item.lineTotal;
+      } else {
+        map.set(key, {
+          productId: item.productId,
+          productName: item.productName,
+          productImageUrl: item.productImageUrl,
+          category,
+          unitsSold: item.quantity,
+          revenue: item.lineTotal,
+        });
+      }
+    });
+  });
+
+  return Array.from(map.values()).sort((a, b) => b.unitsSold - a.unitsSold);
+}
+
+// ─── Small reusable UI pieces ─────────────────────────────────────────────────
 
 function StatCard({
   label,
@@ -105,6 +177,22 @@ export default function AdminDashboardPage() {
   // Delete confirm
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
 
+  // ── Category Manager state ─────────────────────────────────────────────────
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [catError, setCatError] = useState("");
+
+  // ── Delivery Zone state ────────────────────────────────────────────────────
+  const [zones, setZones] = useState<DeliveryZone[]>([]);
+  const [newZoneTown, setNewZoneTown] = useState("");
+  const [newZoneFee, setNewZoneFee] = useState("");
+  const [editingZone, setEditingZone] = useState<DeliveryZone | null>(null);
+  const [zoneError, setZoneError] = useState("");
+
+  // ── Analytics state ────────────────────────────────────────────────────────
+  const [analyticsCat, setAnalyticsCat] = useState("");
+  const [analyticsPeriod, setAnalyticsPeriod] = useState("all");
+
   // ── Auth guard ─────────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -112,6 +200,13 @@ export default function AdminDashboardPage() {
       navigate("/", { replace: true });
     }
   }, [isAdmin, authLoading, navigate]);
+
+  // ── Load localStorage data ──────────────────────────────────────────────────
+
+  useEffect(() => {
+    setCategories(getCategories());
+    setZones(getDeliveryZones());
+  }, []);
 
   // ── Data loading ───────────────────────────────────────────────────────────
 
@@ -150,6 +245,68 @@ export default function AdminDashboardPage() {
     cancelled: orders.filter((o) => o.status === "CANCELLED").length,
   };
 
+  // ── Analytics computation ──────────────────────────────────────────────────
+
+  const bestSellers = computeBestSellers(orders, products, analyticsCat, analyticsPeriod);
+  const maxUnits = bestSellers.length > 0 ? bestSellers[0].unitsSold : 1;
+
+  // ── Category Manager helpers ────────────────────────────────────────────────
+
+  function addCategory() {
+    const name = newCategoryName.trim();
+    if (!name) { setCatError("Please enter a category name."); return; }
+    if (categories.some((c) => c.name.toLowerCase() === name.toLowerCase())) {
+      setCatError("Category already exists."); return;
+    }
+    const updated = [...categories, { id: generateId("cat"), name }];
+    setCategories(updated);
+    saveCategories(updated);
+    setNewCategoryName("");
+    setCatError("");
+  }
+
+  function deleteCategory(id: string) {
+    const updated = categories.filter((c) => c.id !== id);
+    setCategories(updated);
+    saveCategories(updated);
+  }
+
+  // ── Delivery Zone helpers ───────────────────────────────────────────────────
+
+  function addZone() {
+    const town = newZoneTown.trim();
+    const fee = parseFloat(newZoneFee);
+    if (!town) { setZoneError("Please enter a town name."); return; }
+    if (isNaN(fee) || fee < 0) { setZoneError("Please enter a valid fee."); return; }
+    if (zones.some((z) => z.town.toLowerCase() === town.toLowerCase())) {
+      setZoneError("Town already exists."); return;
+    }
+    const updated = [...zones, { id: generateId("zone"), town, fee }];
+    setZones(updated);
+    saveDeliveryZones(updated);
+    setNewZoneTown("");
+    setNewZoneFee("");
+    setZoneError("");
+  }
+
+  function deleteZone(id: string) {
+    const updated = zones.filter((z) => z.id !== id);
+    setZones(updated);
+    saveDeliveryZones(updated);
+  }
+
+  function startEditZone(zone: DeliveryZone) {
+    setEditingZone({ ...zone });
+  }
+
+  function saveEditZone() {
+    if (!editingZone) return;
+    const updated = zones.map((z) => z.id === editingZone.id ? editingZone : z);
+    setZones(updated);
+    saveDeliveryZones(updated);
+    setEditingZone(null);
+  }
+
   // ── Product form helpers ───────────────────────────────────────────────────
 
   function openAddForm() {
@@ -170,6 +327,7 @@ export default function AdminDashboardPage() {
       price: String(product.price),
       stock: String(product.stock),
       cargoPrice: String(product.cargoPrice),
+      category: product.category ?? "",
     });
     setImageFile(null);
     setImagePreview(product.imageUrl ?? "");
@@ -191,18 +349,14 @@ export default function AdminDashboardPage() {
   function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    // Validate type
     if (!file.type.startsWith("image/")) {
       setFormError("Please select a valid image file.");
       return;
     }
-    // Validate size (max 5 MB)
     if (file.size > 5 * 1024 * 1024) {
       setFormError("Image must be smaller than 5 MB.");
       return;
     }
-
     setImageFile(file);
     setImagePreview(URL.createObjectURL(file));
     setFormError("");
@@ -230,6 +384,7 @@ export default function AdminDashboardPage() {
         price,
         stock,
         cargoPrice,
+        category: form.category || undefined,
       };
 
       let savedProduct: Product;
@@ -239,7 +394,6 @@ export default function AdminDashboardPage() {
         savedProduct = await productApi.create(payload);
       }
 
-      // Upload image if selected
       if (imageFile) {
         const fd = new FormData();
         fd.append("file", imageFile);
@@ -265,7 +419,7 @@ export default function AdminDashboardPage() {
       await productApi.delete(id);
       setDeleteConfirm(null);
       loadProducts();
-    } catch (err: unknown) {
+    } catch {
       alert("Failed to delete product.");
     }
   }
@@ -284,10 +438,8 @@ export default function AdminDashboardPage() {
     try {
       const updated = await orderApi.updateStatus(selectedOrder.id, newStatus);
       setSelectedOrder(updated);
-      setOrders((prev) =>
-        prev.map((o) => (o.id === updated.id ? updated : o))
-      );
-    } catch (err: unknown) {
+      setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
+    } catch {
       alert("Failed to update status.");
     } finally {
       setStatusUpdating(false);
@@ -330,6 +482,12 @@ export default function AdminDashboardPage() {
           </TabButton>
           <TabButton active={tab === "orders"} onClick={() => setTab("orders")}>
             🛒 Orders
+          </TabButton>
+          <TabButton active={tab === "analytics"} onClick={() => setTab("analytics")}>
+            📈 Analytics
+          </TabButton>
+          <TabButton active={tab === "settings"} onClick={() => setTab("settings")}>
+            ⚙️ Settings
           </TabButton>
           {tab === "order-detail" && selectedOrder && (
             <TabButton active={true} onClick={() => {}}>
@@ -509,6 +667,24 @@ export default function AdminDashboardPage() {
                       />
                     </div>
 
+                    {/* Category */}
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium mb-1.5">
+                        Category
+                        <span className="ml-2 text-xs text-gray-400">(manage in ⚙️ Settings)</span>
+                      </label>
+                      <select
+                        value={form.category}
+                        onChange={(e) => setForm({ ...form, category: e.target.value })}
+                        className="w-full rounded-xl border border-surface-100 dark:border-surface-800 bg-surface-50 dark:bg-surface-900 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/40 transition-shadow"
+                      >
+                        <option value="">— No Category —</option>
+                        {categories.map((c) => (
+                          <option key={c.id} value={c.name}>{c.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
                     {/* Price */}
                     <div>
                       <label className="block text-sm font-medium mb-1.5">
@@ -595,7 +771,11 @@ export default function AdminDashboardPage() {
                           {imageFile && (
                             <button
                               type="button"
-                              onClick={() => { setImageFile(null); setImagePreview(editingProduct?.imageUrl ?? ""); if (fileInputRef.current) fileInputRef.current.value = ""; }}
+                              onClick={() => {
+                                setImageFile(null);
+                                setImagePreview(editingProduct?.imageUrl ?? "");
+                                if (fileInputRef.current) fileInputRef.current.value = "";
+                              }}
                               className="mt-1 text-xs text-red-400 hover:text-red-600"
                             >
                               Remove selected image
@@ -672,6 +852,7 @@ export default function AdminDashboardPage() {
                       <thead className="bg-surface-50 dark:bg-surface-900">
                         <tr className="text-left text-xs text-gray-400 uppercase tracking-wide">
                           <th className="px-5 py-3">Product</th>
+                          <th className="px-5 py-3">Category</th>
                           <th className="px-5 py-3">Price</th>
                           <th className="px-5 py-3">Stock</th>
                           <th className="px-5 py-3">Cargo</th>
@@ -697,6 +878,15 @@ export default function AdminDashboardPage() {
                                   <p className="text-xs text-gray-400 line-clamp-1">{product.description}</p>
                                 </div>
                               </div>
+                            </td>
+                            <td className="px-5 py-4">
+                              {product.category ? (
+                                <span className="inline-flex items-center rounded-full bg-primary-100 dark:bg-primary-900/30 px-2.5 py-0.5 text-xs font-semibold text-primary-700 dark:text-primary-300">
+                                  {product.category}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-gray-400">—</span>
+                              )}
                             </td>
                             <td className="px-5 py-4 font-semibold text-primary-600">{formatMMK(product.price)}</td>
                             <td className="px-5 py-4">
@@ -821,6 +1011,289 @@ export default function AdminDashboardPage() {
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* ── ANALYTICS TAB ─────────────────────────────────────────────────── */}
+        {tab === "analytics" && (
+          <div className="animate-fade-in space-y-6">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <h2 className="font-display text-xl font-bold">📈 Best Sellers Analytics</h2>
+              <div className="flex items-center gap-3 flex-wrap">
+                {/* Period filter */}
+                <select
+                  value={analyticsPeriod}
+                  onChange={(e) => setAnalyticsPeriod(e.target.value)}
+                  className="rounded-xl border border-surface-100 dark:border-surface-800 bg-white dark:bg-surface-800 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/40"
+                >
+                  <option value="all">All Time</option>
+                  <option value="today">Today</option>
+                  <option value="week">Last 7 Days</option>
+                  <option value="month">This Month</option>
+                </select>
+                {/* Category filter */}
+                <select
+                  value={analyticsCat}
+                  onChange={(e) => setAnalyticsCat(e.target.value)}
+                  className="rounded-xl border border-surface-100 dark:border-surface-800 bg-white dark:bg-surface-800 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/40"
+                >
+                  <option value="">All Categories</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.name}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {ordersLoading ? (
+              <div className="space-y-3">
+                {[...Array(6)].map((_, i) => (
+                  <div key={i} className="h-16 rounded-2xl animate-pulse bg-surface-100 dark:bg-surface-800" />
+                ))}
+              </div>
+            ) : bestSellers.length === 0 ? (
+              <div className="text-center py-24 text-gray-400">
+                <p className="text-5xl mb-4">📊</p>
+                <p className="text-lg font-medium">No sales data yet</p>
+                <p className="text-sm mt-1">Sales analytics will appear once orders are placed</p>
+              </div>
+            ) : (
+              <div className="rounded-2xl bg-white dark:bg-surface-800/50 shadow-lg overflow-hidden">
+                <div className="p-6 border-b border-surface-100 dark:border-surface-800">
+                  <p className="text-sm text-gray-500">Showing <span className="font-semibold text-gray-800 dark:text-gray-200">{bestSellers.length}</span> products ranked by units sold</p>
+                </div>
+                <div className="divide-y divide-surface-100 dark:divide-surface-800">
+                  {bestSellers.map((row, idx) => (
+                    <div key={idx} className="px-6 py-4 flex items-center gap-4 hover:bg-surface-50 dark:hover:bg-surface-800/60 transition-colors">
+                      {/* Rank */}
+                      <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
+                        idx === 0 ? "bg-yellow-400 text-yellow-900" :
+                        idx === 1 ? "bg-gray-300 dark:bg-gray-600 text-gray-700 dark:text-gray-200" :
+                        idx === 2 ? "bg-amber-600 text-white" :
+                        "bg-surface-100 dark:bg-surface-800 text-gray-500"
+                      }`}>
+                        {idx + 1}
+                      </div>
+
+                      {/* Image */}
+                      {row.productImageUrl ? (
+                        <img src={row.productImageUrl} alt={row.productName} className="h-12 w-12 rounded-xl object-cover flex-shrink-0" />
+                      ) : (
+                        <div className="h-12 w-12 rounded-xl bg-surface-100 dark:bg-surface-800 flex items-center justify-center flex-shrink-0 text-xl">
+                          📦
+                        </div>
+                      )}
+
+                      {/* Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-semibold text-gray-900 dark:text-gray-100 truncate">{row.productName}</p>
+                          {idx === 0 && <span className="text-xs bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded-full font-semibold">🏆 Top Seller</span>}
+                          {row.category && (
+                            <span className="text-xs bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 px-1.5 py-0.5 rounded-full">
+                              {row.category}
+                            </span>
+                          )}
+                        </div>
+                        {/* Bar chart */}
+                        <div className="mt-1.5 flex items-center gap-2">
+                          <div className="flex-1 h-2 rounded-full bg-surface-100 dark:bg-surface-800 overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-gradient-to-r from-primary-500 to-accent-500 transition-all duration-700"
+                              style={{ width: `${Math.round((row.unitsSold / maxUnits) * 100)}%` }}
+                            />
+                          </div>
+                          <span className="text-xs text-gray-500 flex-shrink-0">{row.unitsSold} units</span>
+                        </div>
+                      </div>
+
+                      {/* Revenue */}
+                      <div className="flex-shrink-0 text-right">
+                        <p className="font-bold text-primary-600">{formatMMK(row.revenue)}</p>
+                        <p className="text-xs text-gray-400">revenue</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── SETTINGS TAB ─────────────────────────────────────────────────── */}
+        {tab === "settings" && (
+          <div className="animate-fade-in space-y-8">
+            <h2 className="font-display text-xl font-bold">⚙️ Store Settings</h2>
+
+            {/* ── Category Manager ──────────────────────────────── */}
+            <div className="rounded-2xl bg-white dark:bg-surface-800/50 p-6 shadow-lg space-y-5">
+              <div>
+                <h3 className="font-semibold text-lg mb-1">🏷️ Product Categories</h3>
+                <p className="text-sm text-gray-400">Define categories used when creating products</p>
+              </div>
+
+              {/* Add new category */}
+              <div className="flex gap-3">
+                <input
+                  type="text"
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addCategory())}
+                  placeholder="e.g. Kitchen, Kids, Electronics..."
+                  className="flex-1 rounded-xl border border-surface-100 dark:border-surface-800 bg-surface-50 dark:bg-surface-900 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/40"
+                />
+                <button
+                  onClick={addCategory}
+                  className="rounded-xl bg-primary-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-primary-600 transition-colors flex items-center gap-2"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Add
+                </button>
+              </div>
+              {catError && <p className="text-sm text-red-500">{catError}</p>}
+
+              {/* List */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                {categories.map((cat) => (
+                  <div
+                    key={cat.id}
+                    className="flex items-center justify-between rounded-xl bg-surface-50 dark:bg-surface-900 border border-surface-100 dark:border-surface-800 px-4 py-2.5"
+                  >
+                    <span className="text-sm font-medium">{cat.name}</span>
+                    <button
+                      onClick={() => deleteCategory(cat.id)}
+                      className="ml-2 text-gray-400 hover:text-red-500 transition-colors"
+                      title="Delete category"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {categories.length === 0 && (
+                <p className="text-sm text-gray-400 text-center py-4">No categories yet. Add one above.</p>
+              )}
+            </div>
+
+            {/* ── Delivery Zone Manager ──────────────────────────── */}
+            <div className="rounded-2xl bg-white dark:bg-surface-800/50 p-6 shadow-lg space-y-5">
+              <div>
+                <h3 className="font-semibold text-lg mb-1">🚚 Delivery Zones & Fees</h3>
+                <p className="text-sm text-gray-400">Predefine delivery fees by location. Users will select their town at checkout.</p>
+              </div>
+
+              {/* Add new zone */}
+              <div className="flex gap-3">
+                <input
+                  type="text"
+                  value={newZoneTown}
+                  onChange={(e) => setNewZoneTown(e.target.value)}
+                  placeholder="Town (e.g. Hlaing)"
+                  className="flex-1 rounded-xl border border-surface-100 dark:border-surface-800 bg-surface-50 dark:bg-surface-900 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/40"
+                />
+                <input
+                  type="number"
+                  value={newZoneFee}
+                  onChange={(e) => setNewZoneFee(e.target.value)}
+                  placeholder="Fee (MMK)"
+                  min="0"
+                  className="w-36 rounded-xl border border-surface-100 dark:border-surface-800 bg-surface-50 dark:bg-surface-900 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/40"
+                />
+                <button
+                  onClick={addZone}
+                  className="rounded-xl bg-primary-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-primary-600 transition-colors flex items-center gap-2"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Add
+                </button>
+              </div>
+              {zoneError && <p className="text-sm text-red-500">{zoneError}</p>}
+
+              {/* Zone list */}
+              <div className="rounded-xl border border-surface-100 dark:border-surface-800 overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-surface-50 dark:bg-surface-900">
+                    <tr className="text-left text-xs text-gray-400 uppercase tracking-wide">
+                      <th className="px-4 py-3">Town / Location</th>
+                      <th className="px-4 py-3">Delivery Fee</th>
+                      <th className="px-4 py-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-surface-100 dark:divide-surface-800">
+                    {zones.map((zone) => (
+                      <tr key={zone.id} className="hover:bg-surface-50 dark:hover:bg-surface-800/60 transition-colors">
+                        <td className="px-4 py-3">
+                          {editingZone?.id === zone.id ? (
+                            <input
+                              value={editingZone.town}
+                              onChange={(e) => setEditingZone({ ...editingZone, town: e.target.value })}
+                              className="rounded-lg border border-primary-300 bg-white dark:bg-surface-900 px-2 py-1 text-sm w-36 focus:outline-none focus:ring-2 focus:ring-primary-500/40"
+                            />
+                          ) : (
+                            <span className="font-medium">{zone.town}</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          {editingZone?.id === zone.id ? (
+                            <input
+                              type="number"
+                              value={editingZone.fee}
+                              onChange={(e) => setEditingZone({ ...editingZone, fee: parseFloat(e.target.value) || 0 })}
+                              className="rounded-lg border border-primary-300 bg-white dark:bg-surface-900 px-2 py-1 text-sm w-28 focus:outline-none focus:ring-2 focus:ring-primary-500/40"
+                            />
+                          ) : (
+                            <span className="font-semibold text-primary-600">{formatMMK(zone.fee)}</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          {editingZone?.id === zone.id ? (
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={saveEditZone}
+                                className="rounded-lg bg-green-500 px-3 py-1 text-xs font-semibold text-white hover:bg-green-600 transition-colors"
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={() => setEditingZone(null)}
+                                className="rounded-lg bg-surface-100 dark:bg-surface-800 px-3 py-1 text-xs font-semibold hover:bg-surface-200 transition-colors"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => startEditZone(zone)}
+                                className="rounded-lg bg-surface-100 dark:bg-surface-800 px-3 py-1 text-xs font-semibold hover:bg-primary-100 dark:hover:bg-primary-900/30 hover:text-primary-600 transition-colors"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => deleteZone(zone.id)}
+                                className="rounded-lg bg-surface-100 dark:bg-surface-800 px-3 py-1 text-xs font-semibold hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-600 transition-colors"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {zones.length === 0 && (
+                  <p className="text-sm text-gray-400 text-center py-6">No delivery zones yet.</p>
+                )}
+              </div>
+            </div>
           </div>
         )}
 

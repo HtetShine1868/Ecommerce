@@ -21,6 +21,7 @@ export const productApi = {
     price: number;
     stock: number;
     cargoPrice: number;
+    category?: string;
   }) => api.post<Product>("/admin/products", data),
 
   update: (
@@ -31,6 +32,7 @@ export const productApi = {
       price: number;
       stock: number;
       cargoPrice: number;
+      category?: string;
     }
   ) => api.put<Product>("/admin/products/" + id, data),
 
