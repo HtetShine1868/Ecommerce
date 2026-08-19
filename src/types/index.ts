@@ -17,6 +17,7 @@ export interface Product {
   imageUrl?: string;
   categoryId?: number | null;
   categoryName?: string | null;
+  category?: string | null;
   createdAt: string;
   updatedAt: string;
   // computed client-side for analytics / popular sort

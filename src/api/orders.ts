@@ -19,6 +19,19 @@ export const orderApi = {
   // Delivery zones — fetched from backend API
   getActiveDeliveryZones: () => api.get<DeliveryZoneApi[]>("/delivery-zones"),
 
+  // Admin Delivery Zones
+  getAllDeliveryZonesAdmin: () =>
+    api.get<DeliveryZoneApi[]>("/admin/delivery-zones"),
+
+  createDeliveryZone: (data: { townName: string; fee: number; isActive?: boolean }) =>
+    api.post<DeliveryZoneApi>("/admin/delivery-zones", data),
+
+  updateDeliveryZone: (id: number, data: { townName: string; fee: number; isActive?: boolean }) =>
+    api.put<DeliveryZoneApi>("/admin/delivery-zones/" + id, data),
+
+  deleteDeliveryZone: (id: number) =>
+    api.delete<void>("/admin/delivery-zones/" + id),
+
   // Admin endpoints
   getAllAdmin: () => api.get<Order[]>("/admin/orders"),
 

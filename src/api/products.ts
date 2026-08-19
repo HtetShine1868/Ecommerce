@@ -33,6 +33,15 @@ export const productApi = {
   // Categories — fetched from backend API, not localStorage
   getCategories: () => api.get<Category[]>("/categories"),
 
+  createCategory: (data: { name: string; description?: string }) =>
+    api.post<Category>("/admin/categories", data),
+
+  updateCategory: (id: number, data: { name: string; description?: string }) =>
+    api.put<Category>("/admin/categories/" + id, data),
+
+  deleteCategory: (id: number) =>
+    api.delete<void>("/admin/categories/" + id),
+
   // Admin: create product (JSON body, then separately upload image)
   create: (data: {
     name: string;

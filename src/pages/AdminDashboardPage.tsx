@@ -199,10 +199,7 @@ export default function AdminDashboardPage() {
 
   // โ”€โ”€ Load localStorage data โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€
 
-  useEffect(() => {
-    setCategories(getCategories());
-    setZones(getDeliveryZones());
-  }, []);
+
 
   // โ”€โ”€ Data loading โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€
 
@@ -224,11 +221,27 @@ export default function AdminDashboardPage() {
       .finally(() => setOrdersLoading(false));
   }, []);
 
+  const loadCategories = useCallback(() => {
+    productApi
+      .getCategories()
+      .then((data) => setCategories(Array.isArray(data) ? data : []))
+      .catch(() => setCategories([]));
+  }, []);
+
+  const loadZones = useCallback(() => {
+    orderApi
+      .getAllDeliveryZonesAdmin()
+      .then((data) => setZones(Array.isArray(data) ? data : []))
+      .catch(() => setZones([]));
+  }, []);
+
   useEffect(() => {
     if (!isAdmin) return;
     loadProducts();
     loadOrders();
-  }, [isAdmin, loadProducts, loadOrders]);
+    loadCategories();
+    loadZones();
+  }, [isAdmin, loadProducts, loadOrders, loadCategories, loadZones]);
 
   // โ”€โ”€ Computed stats โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€
 
@@ -248,28 +261,34 @@ export default function AdminDashboardPage() {
 
   // โ”€โ”€ Category Manager helpers โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€
 
-  function addCategory() {
+  async function addCategory() {
     const name = newCategoryName.trim();
     if (!name) { setCatError("Please enter a category name."); return; }
     if (categories.some((c) => c.name.toLowerCase() === name.toLowerCase())) {
       setCatError("Category already exists."); return;
     }
-    const updated = [...categories, { id: Date.now(), name, description: "", createdAt: new Date().toISOString() }];
-    setCategories(updated);
-    
-    setNewCategoryName("");
-    setCatError("");
+    try {
+      await productApi.createCategory({ name });
+      setNewCategoryName("");
+      setCatError("");
+      loadCategories();
+    } catch (err: any) {
+      setCatError(err?.message || "Failed to create category");
+    }
   }
 
-  function deleteCategory(id: string) {
-    const updated = categories.filter((c) => c.id !== id);
-    setCategories(updated);
-    
+  async function deleteCategory(id: number) {
+    try {
+      await productApi.deleteCategory(id);
+      loadCategories();
+    } catch {
+      alert("Failed to delete category");
+    }
   }
 
   // โ”€โ”€ Delivery Zone helpers โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€
 
-  function addZone() {
+  async function addZone() {
     const town = newZoneTown.trim();
     const fee = parseFloat(newZoneFee);
     if (!town) { setZoneError("Please enter a town name."); return; }
@@ -277,30 +296,43 @@ export default function AdminDashboardPage() {
     if (zones.some((z) => z.townName.toLowerCase() === town.toLowerCase())) {
       setZoneError("Town already exists."); return;
     }
-    const updated = [...zones, { id: Date.now(), townName: town, fee, isActive: true, createdAt: new Date().toISOString() }];
-    setZones(updated);
-    
-    setNewZoneTown("");
-    setNewZoneFee("");
-    setZoneError("");
+    try {
+      await orderApi.createDeliveryZone({ townName: town, fee, isActive: true });
+      setNewZoneTown("");
+      setNewZoneFee("");
+      setZoneError("");
+      loadZones();
+    } catch (err: any) {
+      setZoneError(err?.message || "Failed to create delivery zone");
+    }
   }
 
-  function deleteZone(id: string) {
-    const updated = zones.filter((z) => z.id !== id);
-    setZones(updated);
-    
+  async function deleteZone(id: number) {
+    try {
+      await orderApi.deleteDeliveryZone(id);
+      loadZones();
+    } catch {
+      alert("Failed to delete zone");
+    }
   }
 
-  function startEditZone(zone: DeliveryZone) {
+  function startEditZone(zone: DeliveryZoneApi) {
     setEditingZone({ ...zone });
   }
 
-  function saveEditZone() {
+  async function saveEditZone() {
     if (!editingZone) return;
-    const updated = zones.map((z) => z.id === editingZone.id ? editingZone : z);
-    setZones(updated);
-    
-    setEditingZone(null);
+    try {
+      await orderApi.updateDeliveryZone(editingZone.id, {
+        townName: editingZone.townName,
+        fee: editingZone.fee,
+        isActive: editingZone.isActive
+      });
+      setEditingZone(null);
+      loadZones();
+    } catch {
+      alert("Failed to update zone");
+    }
   }
 
   // โ”€โ”€ Product form helpers โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€
@@ -323,7 +355,7 @@ export default function AdminDashboardPage() {
       price: String(product.price),
       stock: String(product.stock),
       cargoPrice: String(product.cargoPrice),
-      category: product.categoryNameName ?? "",
+      category: product.categoryName ?? "",
     });
     setImageFile(null);
     setImagePreview(product.imageUrl ?? "");
@@ -1229,7 +1261,7 @@ export default function AdminDashboardPage() {
                           {editingZone?.id === zone.id ? (
                             <input
                               value={editingZone.townName}
-                              onChange={(e) => setEditingZone({ ...editingZone, town: e.target.value })}
+                              onChange={(e) => editingZone && setEditingZone({ ...editingZone, townName: e.target.value })}
                               className="rounded-lg border border-primary-300 bg-white dark:bg-surface-900 px-2 py-1 text-sm w-36 focus:outline-none focus:ring-2 focus:ring-primary-500/40"
                             />
                           ) : (
