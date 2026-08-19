@@ -1,8 +1,8 @@
-import { useEffect, useState, useMemo } from "react";
+﻿import { useEffect, useState, useMemo } from "react";
 import { productApi } from "../api/products";
 import { orderApi } from "../api/orders";
-import { getCategories } from "../utils/localStorage";
 import type { Product, Order, OrderItem } from "../types";
+import type { Category } from "../api/products";
 import ProductCard from "../components/product/ProductCard";
 
 type SortOption = "newest" | "price-asc" | "price-desc" | "popular";
@@ -37,31 +37,41 @@ export default function ProductsPage() {
 
   // Filters & sort
   const [search, setSearch] = useState("");
-  const [category, setCategory] = useState("");
+  const [selectedCategoryId, setSelectedCategoryId] = useState<number | "">("");
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
   const [sortBy, setSortBy] = useState<SortOption>("newest");
 
+  // Categories fetched from backend
+  const [categories, setCategories] = useState<Category[]>([]);
+
   // Orders data for popularity
   const [salesMap, setSalesMap] = useState<Map<number, number>>(new Map());
 
-  // Categories from localStorage (admin-defined)
-  const predefinedCategories = useMemo(() => getCategories(), []);
+  // ── Load categories from API ───────────────────────────────────────────────
+  useEffect(() => {
+    productApi.getCategories().catch(() => {/* non-fatal */}).then((cats) => {
+      if (Array.isArray(cats)) setCategories(cats);
+    });
+  }, []);
 
   // ── Load products ──────────────────────────────────────────────────────────
   useEffect(() => {
     setLoading(true);
     setError("");
     productApi
-      .getAll({ search: search || undefined, category: category || undefined })
+      .getAll({
+        search: search || undefined,
+        categoryId: selectedCategoryId !== "" ? selectedCategoryId : undefined,
+      })
       .then((data) => setProducts(Array.isArray(data) ? data : []))
       .catch((err) => {
         console.error("Failed to load products:", err);
-        setError("Unable to load products. The server may be waking up — please wait a moment and retry.");
+        setError("Unable to load products. Please make sure the server is running.");
         setProducts([]);
       })
       .finally(() => setLoading(false));
-  }, [search, category]);
+  }, [search, selectedCategoryId]);
 
   // ── Load orders for popularity (non-blocking, best-effort) ────────────────
   useEffect(() => {
@@ -72,19 +82,12 @@ export default function ProductsPage() {
         setSalesMap(buildSalesMap(arr));
       })
       .catch(() => {
-        // non-fatal — popularity just won't show
+        // non-fatal — popularity just won'"'"'t show
       });
   }, []);
 
   // ── Derived state ──────────────────────────────────────────────────────────
   const popularIds = useMemo(() => getPopularIds(salesMap, 5), [salesMap]);
-
-  // Build the display category list: union of predefined + any extras from products
-  const displayCategories = useMemo(() => {
-    const fromProducts = products.map((p) => p.category).filter(Boolean) as string[];
-    const predefined = predefinedCategories.map((c) => c.name);
-    return [...new Set([...predefined, ...fromProducts])];
-  }, [predefinedCategories, products]);
 
   // Apply client-side price filter + sort
   const displayProducts = useMemo(() => {
@@ -145,16 +148,18 @@ export default function ProductsPage() {
               />
             </div>
 
-            {/* Category */}
-            {displayCategories.length > 0 && (
+            {/* Category — from backend API */}
+            {categories.length > 0 && (
               <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
+                value={selectedCategoryId}
+                onChange={(e) =>
+                  setSelectedCategoryId(e.target.value === "" ? "" : Number(e.target.value))
+                }
                 className="rounded-xl border border-surface-100 dark:border-surface-800 bg-white dark:bg-surface-800 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/40"
               >
                 <option value="">All Categories</option>
-                {displayCategories.map((c) => (
-                  <option key={c} value={c}>{c}</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
             )}
@@ -200,11 +205,11 @@ export default function ProductsPage() {
                 className="w-32 rounded-xl border border-surface-100 dark:border-surface-800 bg-white dark:bg-surface-800 pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/40"
               />
             </div>
-            {(minPrice || maxPrice || category || sortBy !== "newest" || search) && (
+            {(minPrice || maxPrice || selectedCategoryId !== "" || sortBy !== "newest" || search) && (
               <button
                 onClick={() => {
                   setSearch("");
-                  setCategory("");
+                  setSelectedCategoryId("");
                   setMinPrice("");
                   setMaxPrice("");
                   setSortBy("newest");

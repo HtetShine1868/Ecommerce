@@ -1,11 +1,27 @@
-import api from "./client";
+﻿import api from "./client";
 import type { Product, PageResponse } from "../types";
 
+export interface Category {
+  id: number;
+  name: string;
+  description?: string;
+  createdAt: string;
+}
+
 export const productApi = {
-  getAll: (params?: { search?: string; category?: string; page?: number; size?: number }) => {
+  getAll: (params?: {
+    search?: string;
+    categoryId?: number;
+    minPrice?: number;
+    maxPrice?: number;
+    page?: number;
+    size?: number;
+  }) => {
     const query = new URLSearchParams();
     if (params?.search) query.set("search", params.search);
-    if (params?.category) query.set("category", params.category);
+    if (params?.categoryId != null) query.set("categoryId", String(params.categoryId));
+    if (params?.minPrice != null) query.set("minPrice", String(params.minPrice));
+    if (params?.maxPrice != null) query.set("maxPrice", String(params.maxPrice));
     query.set("page", String(params?.page ?? 0));
     query.set("size", String(params?.size ?? 50));
     const q = query.toString();
@@ -14,6 +30,9 @@ export const productApi = {
 
   getById: (id: number) => api.get<Product>("/products/" + id),
 
+  // Categories — fetched from backend API, not localStorage
+  getCategories: () => api.get<Category[]>("/categories"),
+
   // Admin: create product (JSON body, then separately upload image)
   create: (data: {
     name: string;
@@ -21,7 +40,7 @@ export const productApi = {
     price: number;
     stock: number;
     cargoPrice: number;
-    category?: string;
+    categoryId?: number | null;
   }) => api.post<Product>("/admin/products", data),
 
   update: (
@@ -32,7 +51,7 @@ export const productApi = {
       price: number;
       stock: number;
       cargoPrice: number;
-      category?: string;
+      categoryId?: number | null;
     }
   ) => api.put<Product>("/admin/products/" + id, data),
 

@@ -1,4 +1,4 @@
-export interface User {
+﻿export interface User {
   id: string;
   email: string;
   name: string;
@@ -15,7 +15,8 @@ export interface Product {
   stock: number;
   cargoPrice: number;
   imageUrl?: string;
-  category?: string;
+  categoryId?: number | null;
+  categoryName?: string | null;
   createdAt: string;
   updatedAt: string;
   // computed client-side for analytics / popular sort
@@ -61,7 +62,7 @@ export interface Order {
   customerEmail: string;
   customerPhone?: string;
   deliveryAddress: string;
-  deliveryTown?: string;
+  townName?: string;
   deliveryFee?: number;
   items: OrderItem[];
   subtotal: number;
@@ -74,9 +75,10 @@ export interface Order {
 export interface OrderRequest {
   customerName: string;
   customerPhone?: string;
-  deliveryAddress: string;
-  deliveryTown?: string;
-  deliveryFee?: number;
+  /** ID of a predefined DeliveryZone — mutually exclusive with customDeliveryAddress */
+  deliveryZoneId?: number;
+  /** Free-text address when no zone applies — fee will be 0 */
+  customDeliveryAddress?: string;
 }
 
 export interface AuthTokens {

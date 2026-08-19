@@ -1,11 +1,10 @@
-import { useState, useMemo } from "react";
+﻿import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useCart } from "../context/CartContext";
 import { useAuth } from "../context/AuthContext";
 import { orderApi } from "../api/orders";
+import type { DeliveryZoneApi } from "../api/orders";
 import { formatMMK } from "../utils/format";
-import { getDeliveryZones } from "../utils/localStorage";
-import type { DeliveryZone } from "../utils/localStorage";
 
 const OTHER_LOCATION = "__other__";
 
@@ -14,39 +13,48 @@ export default function CheckoutPage() {
   const { isAuthenticated, user } = useAuth();
   const navigate = useNavigate();
 
-  // Load zones once on mount (memoised — zones don't change mid-checkout)
-  const zones: DeliveryZone[] = useMemo(() => getDeliveryZones(), []);
+  // Load zones from backend API
+  const [zones, setZones] = useState<DeliveryZoneApi[]>([]);
+  useEffect(() => {
+    orderApi.getActiveDeliveryZones().then((z) => {
+      if (Array.isArray(z)) setZones(z);
+    }).catch(() => {
+      // non-fatal — zones just won'"'"'t show, user can still use custom address
+    });
+  }, []);
 
   const [customerName, setCustomerName] = useState(user?.name ?? "");
   const [customerPhone, setCustomerPhone] = useState("");
 
   // Delivery fields
-  const [selectedTown, setSelectedTown] = useState("");
+  const [selectedZoneId, setSelectedZoneId] = useState<number | "">("");
+  const [isOther, setIsOther] = useState(false);
   const [otherAddress, setOtherAddress] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
   // ── Derived values ─────────────────────────────────────────────────────────
-  const isOther = selectedTown === OTHER_LOCATION;
-
   const selectedZone = useMemo(
-    () => zones.find((z) => z.town === selectedTown) ?? null,
-    [zones, selectedTown]
+    () => zones.find((z) => z.id === selectedZoneId) ?? null,
+    [zones, selectedZoneId]
   );
 
   const deliveryFee = selectedZone ? selectedZone.fee : 0;
   const cargoTotal = items.reduce((sum, i) => sum + i.product.cargoPrice, 0);
-  const grandTotal = totalPrice + cargoTotal + deliveryFee;
+  const grandTotal = totalPrice + cargoTotal + (isOther ? 0 : deliveryFee);
 
-  // The address string sent to the backend
-  const resolvedAddress = useMemo(() => {
-    if (!selectedTown) return "";
-    if (isOther) return otherAddress.trim();
-    return selectedZone
-      ? `${selectedZone.town}${otherAddress.trim() ? " — " + otherAddress.trim() : ""}`
-      : "";
-  }, [selectedTown, isOther, selectedZone, otherAddress]);
+  // ── Handle zone select change ───────────────────────────────────────────────
+  const handleZoneChange = (val: string) => {
+    if (val === OTHER_LOCATION) {
+      setIsOther(true);
+      setSelectedZoneId("");
+    } else {
+      setIsOther(false);
+      setSelectedZoneId(val === "" ? "" : Number(val));
+    }
+    setError("");
+  };
 
   // ── Submit ──────────────────────────────────────────────────────────────────
   const handleSubmit = async (e: React.FormEvent) => {
@@ -59,7 +67,7 @@ export default function CheckoutPage() {
       setError("Please enter your name");
       return;
     }
-    if (!selectedTown) {
+    if (!isOther && selectedZoneId === "") {
       setError("Please select a delivery location");
       return;
     }
@@ -74,9 +82,9 @@ export default function CheckoutPage() {
       const order = await orderApi.create({
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim() || undefined,
-        deliveryAddress: resolvedAddress,
-        deliveryTown: isOther ? undefined : selectedZone?.town,
-        deliveryFee: isOther ? undefined : deliveryFee,
+        // Send deliveryZoneId for preset zones, customDeliveryAddress for other
+        deliveryZoneId: isOther ? undefined : (selectedZoneId as number),
+        customDeliveryAddress: isOther ? otherAddress.trim() : undefined,
       });
       clearCart();
       navigate("/receipt/" + order.id);
@@ -108,6 +116,8 @@ export default function CheckoutPage() {
       </div>
     );
   }
+
+  const selectValue = isOther ? OTHER_LOCATION : (selectedZoneId === "" ? "" : String(selectedZoneId));
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
@@ -155,7 +165,7 @@ export default function CheckoutPage() {
                 <div className="flex justify-between text-sm text-gray-500">
                   <span className="flex items-center gap-1.5">
                     <span>🚚</span>
-                    <span>Delivery Fee ({selectedZone.town})</span>
+                    <span>Delivery Fee ({selectedZone.townName})</span>
                   </span>
                   <span className="font-medium text-primary-600">{formatMMK(deliveryFee)}</span>
                 </div>
@@ -213,17 +223,14 @@ export default function CheckoutPage() {
                 Select Your Town <span className="text-red-500">*</span>
               </label>
               <select
-                value={selectedTown}
-                onChange={(e) => {
-                  setSelectedTown(e.target.value);
-                  setError("");
-                }}
+                value={selectValue}
+                onChange={(e) => handleZoneChange(e.target.value)}
                 className="w-full rounded-xl border border-surface-100 dark:border-surface-800 bg-surface-50 dark:bg-surface-900 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/40 transition-shadow"
               >
                 <option value="">— Choose a location —</option>
                 {zones.map((z) => (
-                  <option key={z.id} value={z.town}>
-                    {z.town} — {formatMMK(z.fee)}
+                  <option key={z.id} value={z.id}>
+                    {z.townName} — {formatMMK(z.fee)}
                   </option>
                 ))}
                 <option value={OTHER_LOCATION}>📍 Other location (fee may vary)</option>
@@ -237,7 +244,7 @@ export default function CheckoutPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
                 <span className="text-primary-700 dark:text-primary-300">
-                  Delivery fee for <strong>{selectedZone.town}</strong>:{" "}
+                  Delivery fee for <strong>{selectedZone.townName}</strong>:{" "}
                   <strong>{formatMMK(selectedZone.fee)}</strong>
                 </span>
               </div>
@@ -249,24 +256,16 @@ export default function CheckoutPage() {
               </div>
             )}
 
-            {/* Address text field — always shown as optional detail; required for "other" */}
-            {selectedTown && (
+            {/* Address text field — required for "other" */}
+            {isOther && (
               <div>
                 <label className="block text-sm font-medium mb-1.5">
-                  {isOther ? (
-                    <>Full Address <span className="text-red-500">*</span></>
-                  ) : (
-                    "Street / Building Details (optional)"
-                  )}
+                  Full Address <span className="text-red-500">*</span>
                 </label>
                 <textarea
                   value={otherAddress}
                   onChange={(e) => setOtherAddress(e.target.value)}
-                  placeholder={
-                    isOther
-                      ? "Enter your full delivery address..."
-                      : "Apartment, building, street details..."
-                  }
+                  placeholder="Enter your full delivery address..."
                   rows={3}
                   className="w-full rounded-xl border border-surface-100 dark:border-surface-800 bg-surface-50 dark:bg-surface-900 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/40 transition-shadow resize-none"
                 />

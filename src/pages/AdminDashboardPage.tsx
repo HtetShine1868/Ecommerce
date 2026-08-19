@@ -1,17 +1,13 @@
-import { useEffect, useState, useRef, useCallback } from "react";
+﻿import { useEffect, useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { productApi } from "../api/products";
+import type { Category as ApiCategory } from "../api/products";
 import { orderApi } from "../api/orders";
+import type { DeliveryZoneApi } from "../api/orders";
 import { formatMMK, formatDate, getOrderStatusColor, ORDER_STATUSES } from "../utils/format";
-import {
-  getCategories,
-  saveCategories,
-  getDeliveryZones,
-  saveDeliveryZones,
-  generateId,
-} from "../utils/localStorage";
-import type { Category, DeliveryZone } from "../utils/localStorage";
+
+
 import type { Product, Order, OrderItem } from "../types";
 
 type Tab = "dashboard" | "products" | "orders" | "order-detail" | "analytics" | "settings";
@@ -34,7 +30,7 @@ const emptyForm: ProductFormState = {
   category: "",
 };
 
-// ─── Analytics helpers ────────────────────────────────────────────────────────
+// โ”€โ”€โ”€ Analytics helpers โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€
 
 interface BestSellerRow {
   productId: number | null;
@@ -74,7 +70,7 @@ function computeBestSellers(
     order.items.forEach((item: OrderItem) => {
       const key = item.productId !== null ? String(item.productId) : item.productName;
       const product = products.find((p) => p.id === item.productId);
-      const category = product?.category ?? "";
+      const category = product?.categoryName ?? "";
       if (filterCategory && category !== filterCategory) return;
       if (map.has(key)) {
         const row = map.get(key)!;
@@ -96,7 +92,7 @@ function computeBestSellers(
   return Array.from(map.values()).sort((a, b) => b.unitsSold - a.unitsSold);
 }
 
-// ─── Small reusable UI pieces ─────────────────────────────────────────────────
+// โ”€โ”€โ”€ Small reusable UI pieces โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€
 
 function StatCard({
   label,
@@ -143,7 +139,7 @@ function TabButton({
   );
 }
 
-// ─── Main Component ───────────────────────────────────────────────────────────
+// โ”€โ”€โ”€ Main Component โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€
 
 export default function AdminDashboardPage() {
   const { isAdmin, loading: authLoading } = useAuth();
@@ -177,23 +173,23 @@ export default function AdminDashboardPage() {
   // Delete confirm
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
 
-  // ── Category Manager state ─────────────────────────────────────────────────
-  const [categories, setCategories] = useState<Category[]>([]);
+  // โ”€โ”€ Category Manager state โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€
+  const [categories, setCategories] = useState<ApiCategory[]>([]);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [catError, setCatError] = useState("");
 
-  // ── Delivery Zone state ────────────────────────────────────────────────────
-  const [zones, setZones] = useState<DeliveryZone[]>([]);
+  // โ”€โ”€ Delivery Zone state โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€
+  const [zones, setZones] = useState<DeliveryZoneApi[]>([]);
   const [newZoneTown, setNewZoneTown] = useState("");
   const [newZoneFee, setNewZoneFee] = useState("");
-  const [editingZone, setEditingZone] = useState<DeliveryZone | null>(null);
+  const [editingZone, setEditingZone] = useState<DeliveryZoneApi | null>(null);
   const [zoneError, setZoneError] = useState("");
 
-  // ── Analytics state ────────────────────────────────────────────────────────
+  // โ”€โ”€ Analytics state โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€
   const [analyticsCat, setAnalyticsCat] = useState("");
   const [analyticsPeriod, setAnalyticsPeriod] = useState("all");
 
-  // ── Auth guard ─────────────────────────────────────────────────────────────
+  // โ”€โ”€ Auth guard โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€
 
   useEffect(() => {
     if (!authLoading && !isAdmin) {
@@ -201,14 +197,14 @@ export default function AdminDashboardPage() {
     }
   }, [isAdmin, authLoading, navigate]);
 
-  // ── Load localStorage data ──────────────────────────────────────────────────
+  // โ”€โ”€ Load localStorage data โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€
 
   useEffect(() => {
     setCategories(getCategories());
     setZones(getDeliveryZones());
   }, []);
 
-  // ── Data loading ───────────────────────────────────────────────────────────
+  // โ”€โ”€ Data loading โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€
 
   const loadProducts = useCallback(() => {
     setProductsLoading(true);
@@ -234,7 +230,7 @@ export default function AdminDashboardPage() {
     loadOrders();
   }, [isAdmin, loadProducts, loadOrders]);
 
-  // ── Computed stats ─────────────────────────────────────────────────────────
+  // โ”€โ”€ Computed stats โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€
 
   const stats = {
     totalProducts: products.length,
@@ -245,12 +241,12 @@ export default function AdminDashboardPage() {
     cancelled: orders.filter((o) => o.status === "CANCELLED").length,
   };
 
-  // ── Analytics computation ──────────────────────────────────────────────────
+  // โ”€โ”€ Analytics computation โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€
 
   const bestSellers = computeBestSellers(orders, products, analyticsCat, analyticsPeriod);
   const maxUnits = bestSellers.length > 0 ? bestSellers[0].unitsSold : 1;
 
-  // ── Category Manager helpers ────────────────────────────────────────────────
+  // โ”€โ”€ Category Manager helpers โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€
 
   function addCategory() {
     const name = newCategoryName.trim();
@@ -258,9 +254,9 @@ export default function AdminDashboardPage() {
     if (categories.some((c) => c.name.toLowerCase() === name.toLowerCase())) {
       setCatError("Category already exists."); return;
     }
-    const updated = [...categories, { id: generateId("cat"), name }];
+    const updated = [...categories, { id: Date.now(), name, description: "", createdAt: new Date().toISOString() }];
     setCategories(updated);
-    saveCategories(updated);
+    
     setNewCategoryName("");
     setCatError("");
   }
@@ -268,22 +264,22 @@ export default function AdminDashboardPage() {
   function deleteCategory(id: string) {
     const updated = categories.filter((c) => c.id !== id);
     setCategories(updated);
-    saveCategories(updated);
+    
   }
 
-  // ── Delivery Zone helpers ───────────────────────────────────────────────────
+  // โ”€โ”€ Delivery Zone helpers โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€
 
   function addZone() {
     const town = newZoneTown.trim();
     const fee = parseFloat(newZoneFee);
     if (!town) { setZoneError("Please enter a town name."); return; }
     if (isNaN(fee) || fee < 0) { setZoneError("Please enter a valid fee."); return; }
-    if (zones.some((z) => z.town.toLowerCase() === town.toLowerCase())) {
+    if (zones.some((z) => z.townName.toLowerCase() === town.toLowerCase())) {
       setZoneError("Town already exists."); return;
     }
-    const updated = [...zones, { id: generateId("zone"), town, fee }];
+    const updated = [...zones, { id: Date.now(), townName: town, fee, isActive: true, createdAt: new Date().toISOString() }];
     setZones(updated);
-    saveDeliveryZones(updated);
+    
     setNewZoneTown("");
     setNewZoneFee("");
     setZoneError("");
@@ -292,7 +288,7 @@ export default function AdminDashboardPage() {
   function deleteZone(id: string) {
     const updated = zones.filter((z) => z.id !== id);
     setZones(updated);
-    saveDeliveryZones(updated);
+    
   }
 
   function startEditZone(zone: DeliveryZone) {
@@ -303,11 +299,11 @@ export default function AdminDashboardPage() {
     if (!editingZone) return;
     const updated = zones.map((z) => z.id === editingZone.id ? editingZone : z);
     setZones(updated);
-    saveDeliveryZones(updated);
+    
     setEditingZone(null);
   }
 
-  // ── Product form helpers ───────────────────────────────────────────────────
+  // โ”€โ”€ Product form helpers โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€
 
   function openAddForm() {
     setEditingProduct(null);
@@ -327,7 +323,7 @@ export default function AdminDashboardPage() {
       price: String(product.price),
       stock: String(product.stock),
       cargoPrice: String(product.cargoPrice),
-      category: product.category ?? "",
+      category: product.categoryNameName ?? "",
     });
     setImageFile(null);
     setImagePreview(product.imageUrl ?? "");
@@ -384,7 +380,7 @@ export default function AdminDashboardPage() {
         price,
         stock,
         cargoPrice,
-        category: form.category || undefined,
+        categoryId: categories.find(c => c.name === form.category)?.id ?? null,
       };
 
       let savedProduct: Product;
@@ -424,7 +420,7 @@ export default function AdminDashboardPage() {
     }
   }
 
-  // ── Order detail helpers ───────────────────────────────────────────────────
+  // โ”€โ”€ Order detail helpers โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€
 
   function openOrderDetail(order: Order) {
     setSelectedOrder(order);
@@ -446,7 +442,7 @@ export default function AdminDashboardPage() {
     }
   }
 
-  // ── Guard rendering ────────────────────────────────────────────────────────
+  // โ”€โ”€ Guard rendering โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€
 
   if (authLoading) {
     return (
@@ -458,7 +454,7 @@ export default function AdminDashboardPage() {
 
   if (!isAdmin) return null;
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // โ”€โ”€ Render โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€
 
   return (
     <div className="bg-surface-50 dark:bg-surface-900 min-h-screen p-4 md:p-6">
@@ -475,28 +471,28 @@ export default function AdminDashboardPage() {
         {/* Tabs */}
         <div className="flex gap-2 flex-wrap mb-8">
           <TabButton active={tab === "dashboard"} onClick={() => setTab("dashboard")}>
-            📊 Dashboard
+            ๐“ Dashboard
           </TabButton>
           <TabButton active={tab === "products"} onClick={() => { setTab("products"); closeForm(); }}>
-            📦 Products
+            ๐“ฆ Products
           </TabButton>
           <TabButton active={tab === "orders"} onClick={() => setTab("orders")}>
-            🛒 Orders
+            ๐’ Orders
           </TabButton>
           <TabButton active={tab === "analytics"} onClick={() => setTab("analytics")}>
-            📈 Analytics
+            ๐“ Analytics
           </TabButton>
           <TabButton active={tab === "settings"} onClick={() => setTab("settings")}>
-            ⚙️ Settings
+            โ๏ธ Settings
           </TabButton>
           {tab === "order-detail" && selectedOrder && (
             <TabButton active={true} onClick={() => {}}>
-              📄 Order #{selectedOrder.id}
+              ๐“ Order #{selectedOrder.id}
             </TabButton>
           )}
         </div>
 
-        {/* ── DASHBOARD TAB ─────────────────────────────────────────────────── */}
+        {/* โ”€โ”€ DASHBOARD TAB โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€ */}
         {tab === "dashboard" && (
           <div className="animate-fade-in space-y-8">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -570,7 +566,7 @@ export default function AdminDashboardPage() {
                   onClick={() => setTab("orders")}
                   className="text-sm text-primary-500 hover:underline"
                 >
-                  View all →
+                  View all โ’
                 </button>
               </div>
               {ordersLoading ? (
@@ -617,7 +613,7 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
-        {/* ── PRODUCTS TAB ─────────────────────────────────────────────────── */}
+        {/* โ”€โ”€ PRODUCTS TAB โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€ */}
         {tab === "products" && (
           <div className="animate-fade-in space-y-6">
 
@@ -671,14 +667,14 @@ export default function AdminDashboardPage() {
                     <div className="md:col-span-2">
                       <label className="block text-sm font-medium mb-1.5">
                         Category
-                        <span className="ml-2 text-xs text-gray-400">(manage in ⚙️ Settings)</span>
+                        <span className="ml-2 text-xs text-gray-400">(manage in โ๏ธ Settings)</span>
                       </label>
                       <select
                         value={form.category}
                         onChange={(e) => setForm({ ...form, category: e.target.value })}
                         className="w-full rounded-xl border border-surface-100 dark:border-surface-800 bg-surface-50 dark:bg-surface-900 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/40 transition-shadow"
                       >
-                        <option value="">— No Category —</option>
+                        <option value="">โ€” No Category โ€”</option>
                         {categories.map((c) => (
                           <option key={c.id} value={c.name}>{c.name}</option>
                         ))}
@@ -885,7 +881,7 @@ export default function AdminDashboardPage() {
                                   {product.category}
                                 </span>
                               ) : (
-                                <span className="text-xs text-gray-400">—</span>
+                                <span className="text-xs text-gray-400">โ€”</span>
                               )}
                             </td>
                             <td className="px-5 py-4 font-semibold text-primary-600">{formatMMK(product.price)}</td>
@@ -939,7 +935,7 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
-        {/* ── ORDERS TAB ───────────────────────────────────────────────────── */}
+        {/* โ”€โ”€ ORDERS TAB โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€ */}
         {tab === "orders" && (
           <div className="animate-fade-in space-y-4">
             <div className="flex items-center justify-between">
@@ -1014,11 +1010,11 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
-        {/* ── ANALYTICS TAB ─────────────────────────────────────────────────── */}
+        {/* โ”€โ”€ ANALYTICS TAB โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€ */}
         {tab === "analytics" && (
           <div className="animate-fade-in space-y-6">
             <div className="flex items-center justify-between flex-wrap gap-3">
-              <h2 className="font-display text-xl font-bold">📈 Best Sellers Analytics</h2>
+              <h2 className="font-display text-xl font-bold">๐“ Best Sellers Analytics</h2>
               <div className="flex items-center gap-3 flex-wrap">
                 {/* Period filter */}
                 <select
@@ -1053,7 +1049,7 @@ export default function AdminDashboardPage() {
               </div>
             ) : bestSellers.length === 0 ? (
               <div className="text-center py-24 text-gray-400">
-                <p className="text-5xl mb-4">📊</p>
+                <p className="text-5xl mb-4">๐“</p>
                 <p className="text-lg font-medium">No sales data yet</p>
                 <p className="text-sm mt-1">Sales analytics will appear once orders are placed</p>
               </div>
@@ -1080,7 +1076,7 @@ export default function AdminDashboardPage() {
                         <img src={row.productImageUrl} alt={row.productName} className="h-12 w-12 rounded-xl object-cover flex-shrink-0" />
                       ) : (
                         <div className="h-12 w-12 rounded-xl bg-surface-100 dark:bg-surface-800 flex items-center justify-center flex-shrink-0 text-xl">
-                          📦
+                          ๐“ฆ
                         </div>
                       )}
 
@@ -1088,7 +1084,7 @@ export default function AdminDashboardPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="font-semibold text-gray-900 dark:text-gray-100 truncate">{row.productName}</p>
-                          {idx === 0 && <span className="text-xs bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded-full font-semibold">🏆 Top Seller</span>}
+                          {idx === 0 && <span className="text-xs bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded-full font-semibold">๐ Top Seller</span>}
                           {row.category && (
                             <span className="text-xs bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 px-1.5 py-0.5 rounded-full">
                               {row.category}
@@ -1120,15 +1116,15 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
-        {/* ── SETTINGS TAB ─────────────────────────────────────────────────── */}
+        {/* โ”€โ”€ SETTINGS TAB โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€ */}
         {tab === "settings" && (
           <div className="animate-fade-in space-y-8">
-            <h2 className="font-display text-xl font-bold">⚙️ Store Settings</h2>
+            <h2 className="font-display text-xl font-bold">โ๏ธ Store Settings</h2>
 
-            {/* ── Category Manager ──────────────────────────────── */}
+            {/* โ”€โ”€ Category Manager โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€ */}
             <div className="rounded-2xl bg-white dark:bg-surface-800/50 p-6 shadow-lg space-y-5">
               <div>
-                <h3 className="font-semibold text-lg mb-1">🏷️ Product Categories</h3>
+                <h3 className="font-semibold text-lg mb-1">๐ท๏ธ Product Categories</h3>
                 <p className="text-sm text-gray-400">Define categories used when creating products</p>
               </div>
 
@@ -1180,10 +1176,10 @@ export default function AdminDashboardPage() {
               )}
             </div>
 
-            {/* ── Delivery Zone Manager ──────────────────────────── */}
+            {/* โ”€โ”€ Delivery Zone Manager โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€ */}
             <div className="rounded-2xl bg-white dark:bg-surface-800/50 p-6 shadow-lg space-y-5">
               <div>
-                <h3 className="font-semibold text-lg mb-1">🚚 Delivery Zones & Fees</h3>
+                <h3 className="font-semibold text-lg mb-1">๐ Delivery Zones & Fees</h3>
                 <p className="text-sm text-gray-400">Predefine delivery fees by location. Users will select their town at checkout.</p>
               </div>
 
@@ -1232,12 +1228,12 @@ export default function AdminDashboardPage() {
                         <td className="px-4 py-3">
                           {editingZone?.id === zone.id ? (
                             <input
-                              value={editingZone.town}
+                              value={editingZone.townName}
                               onChange={(e) => setEditingZone({ ...editingZone, town: e.target.value })}
                               className="rounded-lg border border-primary-300 bg-white dark:bg-surface-900 px-2 py-1 text-sm w-36 focus:outline-none focus:ring-2 focus:ring-primary-500/40"
                             />
                           ) : (
-                            <span className="font-medium">{zone.town}</span>
+                            <span className="font-medium">{zone.townName}</span>
                           )}
                         </td>
                         <td className="px-4 py-3">
@@ -1297,7 +1293,7 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
-        {/* ── ORDER DETAIL TAB ─────────────────────────────────────────────── */}
+        {/* โ”€โ”€ ORDER DETAIL TAB โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€ */}
         {tab === "order-detail" && selectedOrder && (
           <div className="animate-fade-in space-y-6">
             {/* Back button */}
@@ -1370,7 +1366,7 @@ export default function AdminDashboardPage() {
                         )}
                         <div className="flex-1 min-w-0">
                           <p className="font-semibold text-sm text-gray-900 dark:text-gray-100">{item.productName}</p>
-                          <p className="text-xs text-gray-400 mt-0.5">{formatMMK(item.unitPrice)} × {item.quantity}</p>
+                          <p className="text-xs text-gray-400 mt-0.5">{formatMMK(item.unitPrice)} ร— {item.quantity}</p>
                         </div>
                         <p className="font-bold text-sm">{formatMMK(item.lineTotal)}</p>
                       </div>
@@ -1450,3 +1446,5 @@ export default function AdminDashboardPage() {
     </div>
   );
 }
+
+
