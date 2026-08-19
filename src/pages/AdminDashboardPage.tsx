@@ -397,12 +397,11 @@ export default function AdminDashboardPage() {
 
     const price = parseFloat(form.price);
     const stock = parseInt(form.stock, 10);
-    const cargoPrice = parseFloat(form.cargoPrice);
+    const cargoPrice = 0; // ignore individual cargo price
 
     if (!form.name.trim()) { setFormError("Product name is required."); return; }
     if (isNaN(price) || price < 0) { setFormError("Price must be a valid non-negative number."); return; }
     if (isNaN(stock) || stock < 0) { setFormError("Stock must be a valid non-negative integer."); return; }
-    if (isNaN(cargoPrice) || cargoPrice < 0) { setFormError("Cargo price must be a valid non-negative number."); return; }
 
     setFormSubmitting(true);
     try {
@@ -747,22 +746,7 @@ export default function AdminDashboardPage() {
                       />
                     </div>
 
-                    {/* Cargo Price */}
-                    <div>
-                      <label className="block text-sm font-medium mb-1.5">
-                        Cargo / Delivery Price (MMK) <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="number"
-                        required
-                        min="0"
-                        step="1"
-                        value={form.cargoPrice}
-                        onChange={(e) => setForm({ ...form, cargoPrice: e.target.value })}
-                        placeholder="3000"
-                        className="w-full rounded-xl border border-surface-100 dark:border-surface-800 bg-surface-50 dark:bg-surface-900 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/40 transition-shadow"
-                      />
-                    </div>
+
 
                     {/* Image upload */}
                     <div>
@@ -883,7 +867,7 @@ export default function AdminDashboardPage() {
                           <th className="px-5 py-3">Category</th>
                           <th className="px-5 py-3">Price</th>
                           <th className="px-5 py-3">Stock</th>
-                          <th className="px-5 py-3">Cargo</th>
+                          
                           <th className="px-5 py-3 text-right">Actions</th>
                         </tr>
                       </thead>
@@ -922,7 +906,7 @@ export default function AdminDashboardPage() {
                                 {product.stock === 0 ? "Out of stock" : product.stock}
                               </span>
                             </td>
-                            <td className="px-5 py-4 text-gray-500">{formatMMK(product.cargoPrice)}</td>
+                            
                             <td className="px-5 py-4">
                               <div className="flex items-center justify-end gap-2">
                                 <button

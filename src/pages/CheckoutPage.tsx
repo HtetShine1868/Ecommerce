@@ -40,8 +40,8 @@ export default function CheckoutPage() {
   );
 
   const deliveryFee = selectedZone ? selectedZone.fee : 0;
-  const cargoTotal = items.reduce((sum, i) => sum + i.product.cargoPrice, 0);
-  const grandTotal = totalPrice + cargoTotal + deliveryFee;
+
+  const grandTotal = totalPrice + deliveryFee;
 
 
 
@@ -144,10 +144,7 @@ export default function CheckoutPage() {
                 <span>Products Subtotal</span>
                 <span>{formatMMK(totalPrice)}</span>
               </div>
-              <div className="flex justify-between text-sm text-gray-500">
-                <span>Per-item Cargo</span>
-                <span>{formatMMK(cargoTotal)}</span>
-              </div>
+
               {/* Town delivery fee line — only visible when a zone is selected */}
               {selectedZone && (
                 <div className="flex justify-between text-sm text-gray-500">
