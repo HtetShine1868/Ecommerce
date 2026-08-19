@@ -6,7 +6,7 @@ import { orderApi } from "../api/orders";
 import type { DeliveryZoneApi } from "../api/orders";
 import { formatMMK } from "../utils/format";
 
-const OTHER_LOCATION = "__other__";
+
 
 export default function CheckoutPage() {
   const { items, totalPrice, clearCart } = useCart();
@@ -28,7 +28,6 @@ export default function CheckoutPage() {
 
   // Delivery fields
   const [selectedZoneId, setSelectedZoneId] = useState<number | "">("");
-  const [isOther, setIsOther] = useState(false);
   const [otherAddress, setOtherAddress] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
@@ -42,19 +41,9 @@ export default function CheckoutPage() {
 
   const deliveryFee = selectedZone ? selectedZone.fee : 0;
   const cargoTotal = items.reduce((sum, i) => sum + i.product.cargoPrice, 0);
-  const grandTotal = totalPrice + cargoTotal + (isOther ? 0 : deliveryFee);
+  const grandTotal = totalPrice + cargoTotal + deliveryFee;
 
-  // ── Handle zone select change ───────────────────────────────────────────────
-  const handleZoneChange = (val: string) => {
-    if (val === OTHER_LOCATION) {
-      setIsOther(true);
-      setSelectedZoneId("");
-    } else {
-      setIsOther(false);
-      setSelectedZoneId(val === "" ? "" : Number(val));
-    }
-    setError("");
-  };
+
 
   // ── Submit ──────────────────────────────────────────────────────────────────
   const handleSubmit = async (e: React.FormEvent) => {
@@ -67,12 +56,12 @@ export default function CheckoutPage() {
       setError("Please enter your name");
       return;
     }
-    if (!isOther && selectedZoneId === "") {
-      setError("Please select a delivery location");
+    if (selectedZoneId === "") {
+      setError("Please select a delivery township");
       return;
     }
-    if (isOther && !otherAddress.trim()) {
-      setError("Please enter your delivery address");
+    if (!otherAddress.trim()) {
+      setError("Please enter your specific delivery address (street, block, etc.)");
       return;
     }
 
@@ -82,9 +71,8 @@ export default function CheckoutPage() {
       const order = await orderApi.create({
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim() || undefined,
-        // Send deliveryZoneId for preset zones, customDeliveryAddress for other
-        deliveryZoneId: isOther ? undefined : (selectedZoneId as number),
-        customDeliveryAddress: isOther ? otherAddress.trim() : undefined,
+        deliveryZoneId: selectedZoneId as number,
+        customDeliveryAddress: otherAddress.trim(),
       });
       clearCart();
       navigate("/receipt/" + order.id);
@@ -117,7 +105,7 @@ export default function CheckoutPage() {
     );
   }
 
-  const selectValue = isOther ? OTHER_LOCATION : (selectedZoneId === "" ? "" : String(selectedZoneId));
+
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
@@ -170,12 +158,7 @@ export default function CheckoutPage() {
                   <span className="font-medium text-primary-600">{formatMMK(deliveryFee)}</span>
                 </div>
               )}
-              {isOther && (
-                <div className="flex justify-between text-sm text-gray-400 italic">
-                  <span>🚚 Delivery Fee (other location)</span>
-                  <span>TBD</span>
-                </div>
-              )}
+
               <div className="flex justify-between text-lg font-bold pt-2 border-t border-surface-100 dark:border-surface-800">
                 <span>Grand Total</span>
                 <span className="text-primary-600">{formatMMK(grandTotal)}</span>
@@ -220,20 +203,22 @@ export default function CheckoutPage() {
             {/* Town dropdown */}
             <div>
               <label className="block text-sm font-medium mb-1.5">
-                Select Your Town <span className="text-red-500">*</span>
+                Select Your Township <span className="text-red-500">*</span>
               </label>
               <select
-                value={selectValue}
-                onChange={(e) => handleZoneChange(e.target.value)}
+                value={selectedZoneId === "" ? "" : String(selectedZoneId)}
+                onChange={(e) => {
+                  setSelectedZoneId(e.target.value === "" ? "" : Number(e.target.value));
+                  setError("");
+                }}
                 className="w-full rounded-xl border border-surface-100 dark:border-surface-800 bg-surface-50 dark:bg-surface-900 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/40 transition-shadow"
               >
-                <option value="">— Choose a location —</option>
+                <option value="">— Choose a township —</option>
                 {zones.map((z) => (
                   <option key={z.id} value={z.id}>
                     {z.townName} — {formatMMK(z.fee)}
                   </option>
                 ))}
-                <option value={OTHER_LOCATION}>📍 Other location (fee may vary)</option>
               </select>
             </div>
 
@@ -250,27 +235,19 @@ export default function CheckoutPage() {
               </div>
             )}
 
-            {isOther && (
-              <div className="rounded-xl bg-amber-50 dark:bg-amber-900/20 px-4 py-3 text-xs text-amber-700 dark:text-amber-300">
-                ⚠️ Delivery fee for your location will be determined after order confirmation.
-              </div>
-            )}
-
-            {/* Address text field — required for "other" */}
-            {isOther && (
-              <div>
-                <label className="block text-sm font-medium mb-1.5">
-                  Full Address <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  value={otherAddress}
-                  onChange={(e) => setOtherAddress(e.target.value)}
-                  placeholder="Enter your full delivery address..."
-                  rows={3}
-                  className="w-full rounded-xl border border-surface-100 dark:border-surface-800 bg-surface-50 dark:bg-surface-900 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/40 transition-shadow resize-none"
-                />
-              </div>
-            )}
+            {/* Address text field — always required */}
+            <div>
+              <label className="block text-sm font-medium mb-1.5">
+                Specific Location / Street Address <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                value={otherAddress}
+                onChange={(e) => setOtherAddress(e.target.value)}
+                placeholder="e.g. No. 12, Yadanar Street, Block 4"
+                rows={3}
+                className="w-full rounded-xl border border-surface-100 dark:border-surface-800 bg-surface-50 dark:bg-surface-900 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/40 transition-shadow resize-none"
+              />
+            </div>
           </div>
 
           {error && (
