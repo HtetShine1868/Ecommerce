@@ -1,4 +1,4 @@
-﻿export interface User {
+export interface User {
   id: string;
   email: string;
   name: string;
@@ -76,10 +76,12 @@ export interface Order {
 export interface OrderRequest {
   customerName: string;
   customerPhone?: string;
-  /** ID of a predefined DeliveryZone — mutually exclusive with customDeliveryAddress */
+  /** ID of a predefined DeliveryZone */
   deliveryZoneId?: number;
   /** Free-text address when no zone applies — fee will be 0 */
   customDeliveryAddress?: string;
+  /** Cart items — sent directly since the frontend uses a localStorage-only cart */
+  items: { productId: number; quantity: number }[];
 }
 
 export interface AuthTokens {

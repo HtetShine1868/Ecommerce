@@ -1,4 +1,4 @@
-﻿import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useCart } from "../context/CartContext";
 import { useAuth } from "../context/AuthContext";
@@ -73,6 +73,7 @@ export default function CheckoutPage() {
         customerPhone: customerPhone.trim() || undefined,
         deliveryZoneId: selectedZoneId as number,
         customDeliveryAddress: otherAddress.trim(),
+        items: items.map((i) => ({ productId: i.product.id, quantity: i.quantity })),
       });
       clearCart();
       navigate("/receipt/" + order.id);
