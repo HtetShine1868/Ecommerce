@@ -11,7 +11,7 @@ const navLinks = [
 
 export default function Navbar() {
   const { user, isAuthenticated, isAdmin, logout } = useAuth();
-  const { totalItems, setIsOpen } = useCart();
+  const { totalItems, setIsOpen, clearCart } = useCart();
   const { isDark, toggle } = useTheme();
   const location = useLocation();
 
@@ -100,7 +100,10 @@ export default function Navbar() {
                 {user?.name}
               </span>
               <button
-                onClick={logout}
+                onClick={() => {
+                  logout();
+                  clearCart();
+                }}
                 className="rounded-lg bg-surface-100 dark:bg-surface-800 px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-surface-100/80 transition-colors"
               >
                 Logout
