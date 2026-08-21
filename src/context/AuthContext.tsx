@@ -103,7 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const u: User = {
       id: String(payload.userId ?? ""),
       email: (payload.sub as string) ?? "",
-      name: (payload.sub as string) ?? "",      // JWT doesn't include name; use email
+      name: (payload.name as string) || (payload.sub as string) || "",
       role: (payload.role as User["role"]) ?? "BUYER",
       createdAt: new Date().toISOString(),
     };
