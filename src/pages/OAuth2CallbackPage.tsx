@@ -2,36 +2,29 @@
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
+function homeForRole(role?: string) {
+  return role === "ADMIN" ? "/admin" : "/";
+}
+
 export default function OAuth2CallbackPage() {
   const [searchParams] = useSearchParams();
-  const { loginWithToken, isAuthenticated } = useAuth();
+  const { loginWithToken } = useAuth();
   const navigate = useNavigate();
-  // Track whether we already processed the token to avoid double-runs in StrictMode
   const processed = useRef(false);
 
-  // Step 1: Process the token from the URL (runs once on mount)
   useEffect(() => {
     if (processed.current) return;
     processed.current = true;
 
     const token = searchParams.get("token");
-    if (token) {
-      loginWithToken(token);
-      // Do NOT navigate here — React state update is async.
-      // Navigation is handled in Step 2 once isAuthenticated flips to true.
-    } else {
-      // No token — something went wrong, send back to login
-      navigate("/login", { replace: true });
+    if (!token) {
+      navigate("/login?error=oauth", { replace: true });
+      return;
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
-  // Step 2: Navigate home only after auth state has actually updated
-  useEffect(() => {
-    if (isAuthenticated) {
-      navigate("/", { replace: true });
-    }
-  }, [isAuthenticated, navigate]);
+    const user = loginWithToken(token);
+    navigate(homeForRole(user.role), { replace: true });
+  }, [loginWithToken, navigate, searchParams]);
 
   return (
     <div className="bg-surface-50 dark:bg-surface-900 min-h-screen flex items-center justify-center">

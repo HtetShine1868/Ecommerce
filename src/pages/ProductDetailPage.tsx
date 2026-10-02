@@ -2,12 +2,14 @@ import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { productApi } from "../api/products";
 import { useCart } from "../context/CartContext";
+import ProductCard from "../components/product/ProductCard";
 import { formatMMK } from "../utils/format";
 import type { Product } from "../types";
 
 export default function ProductDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [product, setProduct] = useState<Product | null>(null);
+  const [related, setRelated] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [quantity, setQuantity] = useState(1);
   const { addItem } = useCart();
@@ -15,10 +17,18 @@ export default function ProductDetailPage() {
   useEffect(() => {
     if (!id) return;
     setLoading(true);
+    setRelated([]);
     productApi
       .getById(Number(id))
-      .then(setProduct)
-      .catch(() => setProduct(null))
+      .then((item) => {
+        setProduct(item);
+        return productApi.getRelated(item.id).catch(() => []);
+      })
+      .then((items) => setRelated(Array.isArray(items) ? items : []))
+      .catch(() => {
+        setProduct(null);
+        setRelated([]);
+      })
       .finally(() => setLoading(false));
   }, [id]);
 
@@ -94,9 +104,12 @@ export default function ProductDetailPage() {
               )}
             </div>
 
-            <p className={`mb-6 text-sm font-medium ${product.stock > 0 ? "text-green-600" : "text-red-500"}`}>
+            <p className={`text-sm font-medium ${product.stock > 0 ? "text-green-600" : "text-red-500"} ${product.unitsSold ? "mb-2" : "mb-6"}`}>
               {product.stock > 0 ? `${product.stock} in stock` : "Out of stock"}
             </p>
+            {product.unitsSold != null && product.unitsSold > 0 && (
+              <p className="mb-6 text-sm text-orange-500">{product.unitsSold} sold</p>
+            )}
 
             {/* Quantity + Add to Cart */}
             <div className="flex items-center gap-4 mt-auto">
@@ -125,6 +138,17 @@ export default function ProductDetailPage() {
             </div>
           </div>
         </div>
+
+        {related.length > 0 && (
+          <section className="mt-12">
+            <h2 className="font-display text-2xl font-bold mb-4">You may also like</h2>
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+              {related.map((item) => (
+                <ProductCard key={item.id} product={item} />
+              ))}
+            </div>
+          </section>
+        )}
       </div>
     </div>
   );

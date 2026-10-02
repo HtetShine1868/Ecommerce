@@ -20,7 +20,7 @@ export interface Product {
   category?: string | null;
   createdAt: string;
   updatedAt: string;
-  // computed client-side for analytics / popular sort
+  unitsSold?: number;
   salesCount?: number;
 }
 
@@ -82,6 +82,7 @@ export interface OrderRequest {
   customDeliveryAddress?: string;
   /** Cart items — sent directly since the frontend uses a localStorage-only cart */
   items: { productId: number; quantity: number }[];
+  idempotencyKey?: string;
 }
 
 export interface AuthTokens {

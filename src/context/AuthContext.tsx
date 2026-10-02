@@ -17,9 +17,9 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isAdmin: boolean;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<User>;
   register: (name: string, email: string, password: string) => Promise<void>;
-  loginWithToken: (token: string) => void;
+  loginWithToken: (token: string) => User;
   logout: () => void;
 }
 
@@ -82,6 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
     storeAuth(data.token, u);
     setUser(u);
+    return u;
   }, []);
 
   const register = useCallback(async (name: string, email: string, password: string) => {
@@ -98,7 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   /** Called from OAuth2 callback page — token comes from URL query param */
-  const loginWithToken = useCallback((token: string) => {
+  const loginWithToken = useCallback((token: string): User => {
     const payload = decodeJwtPayload(token);
     const u: User = {
       id: String(payload.userId ?? ""),
@@ -109,6 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
     storeAuth(token, u);
     setUser(u);
+    return u;
   }, []);
 
   const logout = useCallback(() => {

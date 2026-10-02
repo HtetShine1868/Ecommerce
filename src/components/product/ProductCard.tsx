@@ -72,7 +72,11 @@ export default function ProductCard({ product, isPopular }: ProductCardProps) {
           {product.description}
         </p>
 
-        <div className="mt-auto space-y-3">
+            {product.unitsSold != null && product.unitsSold > 0 && (
+              <p className="mb-2 text-xs font-medium text-orange-500">{product.unitsSold} sold</p>
+            )}
+
+            <div className="mt-auto space-y-3">
           <div className="flex items-baseline justify-between">
             <span className="text-lg font-bold text-primary-600 dark:text-primary-400">
               {formatMMK(product.price)}

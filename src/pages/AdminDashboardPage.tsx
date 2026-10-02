@@ -6,9 +6,10 @@ import type { Category as ApiCategory } from "../api/products";
 import { orderApi } from "../api/orders";
 import type { DeliveryZoneApi } from "../api/orders";
 import { formatMMK, formatDate, getOrderStatusColor, ORDER_STATUSES } from "../utils/format";
+import AdminAnalytics from "./AdminAnalytics";
 
 
-import type { Product, Order, OrderItem } from "../types";
+import type { Product, Order } from "../types";
 
 type Tab = "dashboard" | "products" | "orders" | "order-detail" | "analytics" | "settings";
 
@@ -31,69 +32,6 @@ const emptyForm: ProductFormState = {
 };
 
 // โ”€โ”€โ”€ Analytics helpers โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€
-
-interface BestSellerRow {
-  productId: number | null;
-  productName: string;
-  productImageUrl?: string;
-  category?: string;
-  unitsSold: number;
-  revenue: number;
-}
-
-function computeBestSellers(
-  orders: Order[],
-  products: Product[],
-  filterCategory: string,
-  filterPeriod: string
-): BestSellerRow[] {
-  const now = new Date();
-  const filteredOrders = orders.filter((o) => {
-    if (filterPeriod === "today") {
-      const d = new Date(o.orderDate);
-      return d.toDateString() === now.toDateString();
-    }
-    if (filterPeriod === "week") {
-      const d = new Date(o.orderDate);
-      const diff = (now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24);
-      return diff <= 7;
-    }
-    if (filterPeriod === "month") {
-      const d = new Date(o.orderDate);
-      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-    }
-    return true; // all
-  });
-
-  const map: Map<string, BestSellerRow> = new Map();
-  filteredOrders.forEach((order) => {
-    order.items.forEach((item: OrderItem) => {
-      const key = item.productId !== null ? String(item.productId) : item.productName;
-      const product = products.find((p) => p.id === item.productId);
-      const category = product?.categoryName ?? "";
-      if (filterCategory && category !== filterCategory) return;
-      if (map.has(key)) {
-        const row = map.get(key)!;
-        row.unitsSold += item.quantity;
-        row.revenue += item.lineTotal;
-      } else {
-        map.set(key, {
-          productId: item.productId,
-          productName: item.productName,
-          productImageUrl: item.productImageUrl,
-          category,
-          unitsSold: item.quantity,
-          revenue: item.lineTotal,
-        });
-      }
-    });
-  });
-
-  return Array.from(map.values()).sort((a, b) => b.unitsSold - a.unitsSold);
-}
-
-// โ”€โ”€โ”€ Small reusable UI pieces โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€
-
 function StatCard({
   label,
   value,
@@ -186,9 +124,6 @@ export default function AdminDashboardPage() {
   const [zoneError, setZoneError] = useState("");
 
   // โ”€โ”€ Analytics state โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€
-  const [analyticsCat, setAnalyticsCat] = useState("");
-  const [analyticsPeriod, setAnalyticsPeriod] = useState("all");
-
   // โ”€โ”€ Auth guard โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€
 
   useEffect(() => {
@@ -256,8 +191,6 @@ export default function AdminDashboardPage() {
 
   // โ”€โ”€ Analytics computation โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€
 
-  const bestSellers = computeBestSellers(orders, products, analyticsCat, analyticsPeriod);
-  const maxUnits = bestSellers.length > 0 ? bestSellers[0].unitsSold : 1;
 
   // โ”€โ”€ Category Manager helpers โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€
 
@@ -1027,112 +960,8 @@ export default function AdminDashboardPage() {
         )}
 
         {/* โ”€โ”€ ANALYTICS TAB โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€ */}
-        {tab === "analytics" && (
-          <div className="animate-fade-in space-y-6">
-            <div className="flex items-center justify-between flex-wrap gap-3">
-              <h2 className="font-display text-xl font-bold">๐“ Best Sellers Analytics</h2>
-              <div className="flex items-center gap-3 flex-wrap">
-                {/* Period filter */}
-                <select
-                  value={analyticsPeriod}
-                  onChange={(e) => setAnalyticsPeriod(e.target.value)}
-                  className="rounded-xl border border-surface-100 dark:border-surface-800 bg-white dark:bg-surface-800 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/40"
-                >
-                  <option value="all">All Time</option>
-                  <option value="today">Today</option>
-                  <option value="week">Last 7 Days</option>
-                  <option value="month">This Month</option>
-                </select>
-                {/* Category filter */}
-                <select
-                  value={analyticsCat}
-                  onChange={(e) => setAnalyticsCat(e.target.value)}
-                  className="rounded-xl border border-surface-100 dark:border-surface-800 bg-white dark:bg-surface-800 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/40"
-                >
-                  <option value="">All Categories</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.name}>{c.name}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
+        {tab === "analytics" && <AdminAnalytics />}
 
-            {ordersLoading ? (
-              <div className="space-y-3">
-                {[...Array(6)].map((_, i) => (
-                  <div key={i} className="h-16 rounded-2xl animate-pulse bg-surface-100 dark:bg-surface-800" />
-                ))}
-              </div>
-            ) : bestSellers.length === 0 ? (
-              <div className="text-center py-24 text-gray-400">
-                <p className="text-5xl mb-4">๐“</p>
-                <p className="text-lg font-medium">No sales data yet</p>
-                <p className="text-sm mt-1">Sales analytics will appear once orders are placed</p>
-              </div>
-            ) : (
-              <div className="rounded-2xl bg-white dark:bg-surface-800/50 shadow-lg overflow-hidden">
-                <div className="p-6 border-b border-surface-100 dark:border-surface-800">
-                  <p className="text-sm text-gray-500">Showing <span className="font-semibold text-gray-800 dark:text-gray-200">{bestSellers.length}</span> products ranked by units sold</p>
-                </div>
-                <div className="divide-y divide-surface-100 dark:divide-surface-800">
-                  {bestSellers.map((row, idx) => (
-                    <div key={idx} className="px-6 py-4 flex items-center gap-4 hover:bg-surface-50 dark:hover:bg-surface-800/60 transition-colors">
-                      {/* Rank */}
-                      <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
-                        idx === 0 ? "bg-yellow-400 text-yellow-900" :
-                        idx === 1 ? "bg-gray-300 dark:bg-gray-600 text-gray-700 dark:text-gray-200" :
-                        idx === 2 ? "bg-amber-600 text-white" :
-                        "bg-surface-100 dark:bg-surface-800 text-gray-500"
-                      }`}>
-                        {idx + 1}
-                      </div>
-
-                      {/* Image */}
-                      {row.productImageUrl ? (
-                        <img src={row.productImageUrl} alt={row.productName} className="h-12 w-12 rounded-xl object-cover flex-shrink-0" />
-                      ) : (
-                        <div className="h-12 w-12 rounded-xl bg-surface-100 dark:bg-surface-800 flex items-center justify-center flex-shrink-0 text-xl">
-                          ๐“ฆ
-                        </div>
-                      )}
-
-                      {/* Info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="font-semibold text-gray-900 dark:text-gray-100 truncate">{row.productName}</p>
-                          {idx === 0 && <span className="text-xs bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded-full font-semibold">๐ Top Seller</span>}
-                          {row.category && (
-                            <span className="text-xs bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 px-1.5 py-0.5 rounded-full">
-                              {row.category}
-                            </span>
-                          )}
-                        </div>
-                        {/* Bar chart */}
-                        <div className="mt-1.5 flex items-center gap-2">
-                          <div className="flex-1 h-2 rounded-full bg-surface-100 dark:bg-surface-800 overflow-hidden">
-                            <div
-                              className="h-full rounded-full bg-gradient-to-r from-primary-500 to-accent-500 transition-all duration-700"
-                              style={{ width: `${Math.round((row.unitsSold / maxUnits) * 100)}%` }}
-                            />
-                          </div>
-                          <span className="text-xs text-gray-500 flex-shrink-0">{row.unitsSold} units</span>
-                        </div>
-                      </div>
-
-                      {/* Revenue */}
-                      <div className="flex-shrink-0 text-right">
-                        <p className="font-bold text-primary-600">{formatMMK(row.revenue)}</p>
-                        <p className="text-xs text-gray-400">revenue</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* โ”€โ”€ SETTINGS TAB โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€ */}
         {tab === "settings" && (
           <div className="animate-fade-in space-y-8">
             <h2 className="font-display text-xl font-bold">โ๏ธ Store Settings</h2>

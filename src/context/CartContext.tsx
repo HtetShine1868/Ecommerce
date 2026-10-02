@@ -47,13 +47,17 @@ export function CartProvider({ children }: { children: ReactNode }) {
     setItems((prev) => {
       const existing = prev.find((i) => i.product.id === product.id);
       if (existing) {
+        const nextQty = existing.quantity + quantity;
+        if (nextQty > product.stock) return prev;
         return prev.map((i) =>
           i.product.id === product.id
-            ? { ...i, quantity: i.quantity + quantity }
+            ? { ...i, quantity: nextQty, product }
             : i
         );
       }
-      return [...prev, { id: Date.now(), product, quantity }];
+      const qty = Math.min(quantity, product.stock);
+      if (qty <= 0) return prev;
+      return [...prev, { id: Date.now(), product, quantity: qty }];
     });
     setIsOpen(true);
   };
@@ -69,7 +73,9 @@ export function CartProvider({ children }: { children: ReactNode }) {
     }
     setItems((prev) =>
       prev.map((i) =>
-        i.product.id === productId ? { ...i, quantity } : i
+        i.product.id === productId
+          ? { ...i, quantity: Math.min(quantity, i.product.stock || quantity) }
+          : i
       )
     );
   };

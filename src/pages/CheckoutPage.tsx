@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useCart } from "../context/CartContext";
 import { useAuth } from "../context/AuthContext";
@@ -31,6 +31,12 @@ export default function CheckoutPage() {
   const [otherAddress, setOtherAddress] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const idempotencyKey = useRef(
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : String(Date.now())
+  );
   const [error, setError] = useState("");
 
   // ── Derived values ─────────────────────────────────────────────────────────
@@ -40,8 +46,11 @@ export default function CheckoutPage() {
   );
 
   const deliveryFee = selectedZone ? selectedZone.fee : 0;
-
-  const grandTotal = totalPrice + deliveryFee;
+  const cargoTotal = items.reduce(
+    (sum, item) => sum + (item.product.cargoPrice || 0) * item.quantity,
+    0
+  );
+  const grandTotal = totalPrice + cargoTotal + deliveryFee;
 
 
 
@@ -64,6 +73,8 @@ export default function CheckoutPage() {
       setError("Please enter your specific delivery address (street, block, etc.)");
       return;
     }
+    if (submittingRef.current) return;
+    submittingRef.current = true;
 
     setSubmitting(true);
     setError("");
@@ -73,6 +84,7 @@ export default function CheckoutPage() {
         customerPhone: customerPhone.trim() || undefined,
         deliveryZoneId: selectedZoneId as number,
         customDeliveryAddress: otherAddress.trim(),
+        idempotencyKey: idempotencyKey.current,
         items: items.map((i) => ({ productId: i.product.id, quantity: i.quantity })),
       });
       clearCart();
@@ -83,6 +95,7 @@ export default function CheckoutPage() {
           ? (err as { message: string }).message
           : "Failed to place order";
       setError(msg);
+      submittingRef.current = false;
     } finally {
       setSubmitting(false);
     }
@@ -145,6 +158,12 @@ export default function CheckoutPage() {
                 <span>Products Subtotal</span>
                 <span>{formatMMK(totalPrice)}</span>
               </div>
+              {cargoTotal > 0 && (
+                <div className="flex justify-between text-sm text-gray-500">
+                  <span>Cargo</span>
+                  <span>{formatMMK(cargoTotal)}</span>
+                </div>
+              )}
 
               {/* Town delivery fee line — only visible when a zone is selected */}
               {selectedZone && (

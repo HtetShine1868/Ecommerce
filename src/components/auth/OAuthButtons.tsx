@@ -1,20 +1,24 @@
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "https://ecommercebe-xhhj.onrender.com";
+const BACKEND_URL =
+  import.meta.env.VITE_BACKEND_URL ||
+  (import.meta.env.DEV
+    ? "http://localhost:8080"
+    : "https://ecommercebe-xhhj.onrender.com");
 
 interface OAuthButtonsProps {
   /** Text variant: "sign in" vs "sign up" */
   mode?: "signin" | "signup";
 }
 
+function startOAuth(provider: "google" | "facebook") {
+  const redirect = encodeURIComponent(window.location.origin);
+  window.location.href = `${BACKEND_URL}/oauth2/authorization/${provider}?redirect=${redirect}`;
+}
+
 export default function OAuthButtons({ mode = "signin" }: OAuthButtonsProps) {
   const verb = mode === "signin" ? "Sign in" : "Sign up";
 
-  const handleGoogle = () => {
-    window.location.href = `${BACKEND_URL}/oauth2/authorization/google`;
-  };
-
-  const handleFacebook = () => {
-    window.location.href = `${BACKEND_URL}/oauth2/authorization/facebook`;
-  };
+  const handleGoogle = () => startOAuth("google");
+  const handleFacebook = () => startOAuth("facebook");
 
   return (
     <div className="space-y-3">

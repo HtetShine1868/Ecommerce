@@ -1,273 +1,229 @@
-﻿import { useEffect, useState, useMemo } from "react";
+﻿import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { productApi } from "../api/products";
-import { orderApi } from "../api/orders";
-import type { Product, Order, OrderItem } from "../types";
 import type { Category } from "../api/products";
+import type { Product } from "../types";
 import ProductCard from "../components/product/ProductCard";
 
-type SortOption = "newest" | "price-asc" | "price-desc" | "popular";
-
-// ─── Compute salesCount map from all orders ───────────────────────────────────
-function buildSalesMap(orders: Order[]): Map<number, number> {
-  const map = new Map<number, number>();
-  orders.forEach((order) => {
-    order.items.forEach((item: OrderItem) => {
-      if (item.productId !== null) {
-        map.set(item.productId, (map.get(item.productId) ?? 0) + item.quantity);
-      }
-    });
-  });
-  return map;
-}
-
-// Top-N product IDs by units sold
-function getPopularIds(salesMap: Map<number, number>, topN = 5): Set<number> {
-  return new Set(
-    [...salesMap.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, topN)
-      .map(([id]) => id)
-  );
-}
+const SORTS = [
+  { value: "popular", label: "Most Popular" },
+  { value: "newest", label: "Newest" },
+  { value: "price-asc", label: "Price: Low to High" },
+  { value: "price-desc", label: "Price: High to Low" },
+  { value: "name-asc", label: "Name: A-Z" },
+  { value: "name-desc", label: "Name: Z-A" },
+];
 
 export default function ProductsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [page, setPage] = useState(Number(searchParams.get("page") || 0));
+  const [totalPages, setTotalPages] = useState(0);
+  const [totalElements, setTotalElements] = useState(0);
 
-  // Filters & sort
-  const [search, setSearch] = useState("");
-  const [selectedCategoryId, setSelectedCategoryId] = useState<number | "">("");
-  const [minPrice, setMinPrice] = useState("");
-  const [maxPrice, setMaxPrice] = useState("");
-  const [sortBy, setSortBy] = useState<SortOption>("newest");
+  const [searchInput, setSearchInput] = useState(searchParams.get("search") || "");
+  const [search, setSearch] = useState(searchParams.get("search") || "");
+  const [categoryId, setCategoryId] = useState(searchParams.get("categoryId") || "");
+  const [minPrice, setMinPrice] = useState(searchParams.get("minPrice") || "");
+  const [maxPrice, setMaxPrice] = useState(searchParams.get("maxPrice") || "");
+  const [inStock, setInStock] = useState(searchParams.get("inStock") === "true");
+  const [sort, setSort] = useState(searchParams.get("sort") || "newest");
 
-  // Categories fetched from backend
-  const [categories, setCategories] = useState<Category[]>([]);
-
-  // Orders data for popularity
-  const [salesMap, setSalesMap] = useState<Map<number, number>>(new Map());
-
-  // ── Load categories from API ───────────────────────────────────────────────
   useEffect(() => {
-    productApi.getCategories().catch(() => {/* non-fatal */}).then((cats) => {
+    productApi.getCategories().then((cats) => {
       if (Array.isArray(cats)) setCategories(cats);
-    });
+    }).catch(() => {});
   }, []);
 
-  // ── Load products ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    const timer = setTimeout(() => setSearch(searchInput.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  const skipPageReset = useRef(true);
+  useEffect(() => {
+    if (skipPageReset.current) {
+      skipPageReset.current = false;
+      return;
+    }
+    setPage(0);
+  }, [search, categoryId, minPrice, maxPrice, inStock, sort]);
+
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (search) next.set("search", search);
+    if (categoryId) next.set("categoryId", categoryId);
+    if (minPrice) next.set("minPrice", minPrice);
+    if (maxPrice) next.set("maxPrice", maxPrice);
+    if (inStock) next.set("inStock", "true");
+    if (sort && sort !== "newest") next.set("sort", sort);
+    if (page > 0) next.set("page", String(page));
+    setSearchParams(next, { replace: true });
+  }, [search, categoryId, minPrice, maxPrice, inStock, sort, page, setSearchParams]);
+
   useEffect(() => {
     setLoading(true);
     setError("");
+    const min = minPrice === "" ? undefined : Number(minPrice);
+    const max = maxPrice === "" ? undefined : Number(maxPrice);
     productApi
-      .getAll({
+      .getPage({
         search: search || undefined,
-        categoryId: selectedCategoryId !== "" ? selectedCategoryId : undefined,
+        categoryId: categoryId ? Number(categoryId) : undefined,
+        minPrice: min != null && !Number.isNaN(min) ? min : undefined,
+        maxPrice: max != null && !Number.isNaN(max) ? max : undefined,
+        inStock: inStock ? true : undefined,
+        sort,
+        page,
+        size: 12,
       })
-      .then((data) => setProducts(Array.isArray(data) ? data : []))
-      .catch((err) => {
-        console.error("Failed to load products:", err);
+      .then((data) => {
+        setProducts(data.content ?? []);
+        setTotalPages(data.totalPages ?? 0);
+        setTotalElements(data.totalElements ?? 0);
+      })
+      .catch(() => {
         setError("Unable to load products. Please make sure the server is running.");
         setProducts([]);
       })
       .finally(() => setLoading(false));
-  }, [search, selectedCategoryId]);
+  }, [search, categoryId, minPrice, maxPrice, inStock, sort, page]);
 
-  // ── Load orders for popularity (non-blocking, best-effort) ────────────────
-  useEffect(() => {
-    orderApi
-      .getAll()
-      .then((data) => {
-        const arr = Array.isArray(data) ? data : [];
-        setSalesMap(buildSalesMap(arr));
-      })
-      .catch(() => {
-        // non-fatal — popularity just won'"'"'t show
-      });
-  }, []);
+  const clearFilters = () => {
+    setSearchInput("");
+    setSearch("");
+    setCategoryId("");
+    setMinPrice("");
+    setMaxPrice("");
+    setInStock(false);
+    setSort("newest");
+  };
 
-  // ── Derived state ──────────────────────────────────────────────────────────
-  const popularIds = useMemo(() => getPopularIds(salesMap, 5), [salesMap]);
+  const filtersActive = Boolean(search || categoryId || minPrice || maxPrice || inStock || sort !== "newest");
 
-  // Apply client-side price filter + sort
-  const displayProducts = useMemo(() => {
-    let list = [...products];
-
-    // Price filter
-    const min = parseFloat(minPrice);
-    const max = parseFloat(maxPrice);
-    if (!isNaN(min) && min >= 0) list = list.filter((p) => p.price >= min);
-    if (!isNaN(max) && max >= 0) list = list.filter((p) => p.price <= max);
-
-    // Sort
-    switch (sortBy) {
-      case "price-asc":
-        list.sort((a, b) => a.price - b.price);
-        break;
-      case "price-desc":
-        list.sort((a, b) => b.price - a.price);
-        break;
-      case "popular":
-        list.sort((a, b) => (salesMap.get(b.id) ?? 0) - (salesMap.get(a.id) ?? 0));
-        break;
-      case "newest":
-      default:
-        list.sort(
-          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        );
-        break;
-    }
-    return list;
-  }, [products, minPrice, maxPrice, sortBy, salesMap]);
-
-  // ── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div className="bg-surface-50 dark:bg-surface-900 min-h-screen p-6">
+    <div className="bg-surface-50 dark:bg-surface-900 min-h-screen p-4 md:p-6">
       <div className="mx-auto max-w-7xl">
         <h1 className="font-display text-4xl font-bold mb-6">All Products</h1>
 
-        {/* ── Filters bar ────────────────────────────────────────────────── */}
-        <div className="mb-8 space-y-3">
-          {/* Row 1: search + category + sort */}
-          <div className="flex flex-col sm:flex-row gap-3">
-            {/* Search */}
-            <div className="relative flex-1">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400"
-                fill="none" viewBox="0 0 24 24" stroke="currentColor"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              <input
-                type="text"
-                placeholder="Search products..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full rounded-xl border border-surface-100 dark:border-surface-800 bg-white dark:bg-surface-800 pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/40 transition-shadow"
-              />
-            </div>
-
-            {/* Category — from backend API */}
-            {categories.length > 0 && (
-              <select
-                value={selectedCategoryId}
-                onChange={(e) =>
-                  setSelectedCategoryId(e.target.value === "" ? "" : Number(e.target.value))
-                }
-                className="rounded-xl border border-surface-100 dark:border-surface-800 bg-white dark:bg-surface-800 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/40"
-              >
-                <option value="">All Categories</option>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-            )}
-
-            {/* Sort */}
+        <div className="mb-6 space-y-3">
+          <div className="flex flex-col gap-3 lg:flex-row">
+            <input
+              type="text"
+              placeholder="Search by name, description, or category"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              className="flex-1 rounded-xl border border-surface-100 dark:border-surface-800 bg-white dark:bg-surface-800 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/40"
+            />
             <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as SortOption)}
-              className="rounded-xl border border-surface-100 dark:border-surface-800 bg-white dark:bg-surface-800 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/40"
+              value={categoryId}
+              onChange={(e) => setCategoryId(e.target.value)}
+              className="rounded-xl border border-surface-100 dark:border-surface-800 bg-white dark:bg-surface-800 px-4 py-2.5 text-sm"
             >
-              <option value="newest">Newest First</option>
-              <option value="price-asc">Price: Low → High</option>
-              <option value="price-desc">Price: High → Low</option>
-              <option value="popular">🔥 Most Popular</option>
+              <option value="">All Categories</option>
+              {categories.map((category) => (
+                <option key={category.id} value={category.id}>{category.name}</option>
+              ))}
+            </select>
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value)}
+              className="rounded-xl border border-surface-100 dark:border-surface-800 bg-white dark:bg-surface-800 px-4 py-2.5 text-sm"
+            >
+              {SORTS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
             </select>
           </div>
 
-          {/* Row 2: price range */}
-          <div className="flex items-center gap-3 flex-wrap">
-            <span className="text-sm text-gray-500 flex-shrink-0">Price (MMK):</span>
-            <div className="relative flex-shrink-0">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">min</span>
-              <input
-                type="number"
-                min="0"
-                step="1000"
-                value={minPrice}
-                onChange={(e) => setMinPrice(e.target.value)}
-                placeholder="0"
-                className="w-32 rounded-xl border border-surface-100 dark:border-surface-800 bg-white dark:bg-surface-800 pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/40"
-              />
-            </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-sm text-gray-500">Price (MMK)</span>
+            <input
+              type="number"
+              min="0"
+              value={minPrice}
+              onChange={(e) => setMinPrice(e.target.value)}
+              placeholder="Min"
+              className="w-28 rounded-xl border border-surface-100 dark:border-surface-800 bg-white dark:bg-surface-800 px-3 py-2 text-sm"
+            />
             <span className="text-gray-400">—</span>
-            <div className="relative flex-shrink-0">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">max</span>
+            <input
+              type="number"
+              min="0"
+              value={maxPrice}
+              onChange={(e) => setMaxPrice(e.target.value)}
+              placeholder="Max"
+              className="w-28 rounded-xl border border-surface-100 dark:border-surface-800 bg-white dark:bg-surface-800 px-3 py-2 text-sm"
+            />
+            <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
               <input
-                type="number"
-                min="0"
-                step="1000"
-                value={maxPrice}
-                onChange={(e) => setMaxPrice(e.target.value)}
-                placeholder="any"
-                className="w-32 rounded-xl border border-surface-100 dark:border-surface-800 bg-white dark:bg-surface-800 pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/40"
+                type="checkbox"
+                checked={inStock}
+                onChange={(e) => setInStock(e.target.checked)}
               />
-            </div>
-            {(minPrice || maxPrice || selectedCategoryId !== "" || sortBy !== "newest" || search) && (
-              <button
-                onClick={() => {
-                  setSearch("");
-                  setSelectedCategoryId("");
-                  setMinPrice("");
-                  setMaxPrice("");
-                  setSortBy("newest");
-                }}
-                className="text-xs text-primary-500 hover:underline"
-              >
+              In stock
+            </label>
+            {filtersActive && (
+              <button onClick={clearFilters} className="text-xs text-primary-500 hover:underline">
                 Clear filters
               </button>
             )}
           </div>
         </div>
 
-        {/* ── Results summary ─────────────────────────────────────────────── */}
-        {!loading && !error && displayProducts.length > 0 && (
-          <p className="text-sm text-gray-400 mb-4">
-            {displayProducts.length} product{displayProducts.length !== 1 ? "s" : ""} found
-            {sortBy === "popular" && (
-              <span className="ml-2 text-orange-500 font-medium">• sorted by popularity</span>
-            )}
+        {!loading && !error && (
+          <p className="mb-4 text-sm text-gray-400">
+            {totalElements} product{totalElements === 1 ? "" : "s"} found
           </p>
         )}
 
-        {/* ── Grid ───────────────────────────────────────────────────────── */}
         {loading ? (
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {[...Array(8)].map((_, i) => (
-              <div key={i} className="animate-pulse rounded-xl bg-surface-100 dark:bg-surface-800 h-72" />
+              <div key={i} className="h-72 animate-pulse rounded-xl bg-surface-100 dark:bg-surface-800" />
             ))}
           </div>
         ) : error ? (
-          <div className="max-w-md mx-auto text-center py-16">
-            <div className="rounded-2xl bg-red-50 dark:bg-red-900/20 p-8">
-              <svg className="mx-auto h-12 w-12 text-red-400 mb-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
-              </svg>
-              <p className="text-sm text-red-600 dark:text-red-400 mb-4">{error}</p>
-              <button
-                onClick={() => window.location.reload()}
-                className="rounded-xl bg-primary-500 px-6 py-2 text-sm font-semibold text-white hover:bg-primary-600 transition-colors"
-              >
-                Retry
-              </button>
-            </div>
-          </div>
-        ) : displayProducts.length === 0 ? (
-          <div className="text-center py-20 text-gray-400">
+          <p className="py-16 text-center text-sm text-red-500">{error}</p>
+        ) : products.length === 0 ? (
+          <div className="py-20 text-center text-gray-400">
             <p className="text-lg font-medium">No products found</p>
-            <p className="mt-1 text-sm">Try adjusting your search or filters</p>
+            <p className="mt-1 text-sm">Try a different search or clear the filters.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {displayProducts.map((p) => (
+            {products.map((product) => (
               <ProductCard
-                key={p.id}
-                product={p}
-                isPopular={popularIds.has(p.id)}
+                key={product.id}
+                product={product}
+                isPopular={sort === "popular" && (product.unitsSold ?? 0) > 0}
               />
             ))}
+          </div>
+        )}
+
+        {totalPages > 1 && (
+          <div className="mt-8 flex items-center justify-center gap-2">
+            <button
+              disabled={page === 0}
+              onClick={() => setPage((current) => Math.max(0, current - 1))}
+              className="rounded-xl bg-white dark:bg-surface-800 px-4 py-2 text-sm disabled:opacity-40"
+            >
+              Previous
+            </button>
+            <span className="text-sm text-gray-500">
+              Page {page + 1} of {totalPages}
+            </span>
+            <button
+              disabled={page + 1 >= totalPages}
+              onClick={() => setPage((current) => current + 1)}
+              className="rounded-xl bg-white dark:bg-surface-800 px-4 py-2 text-sm disabled:opacity-40"
+            >
+              Next
+            </button>
           </div>
         )}
       </div>
